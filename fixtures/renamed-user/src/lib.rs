@@ -8,6 +8,6 @@ button_watch! {
 
 renamed_demo::strips! {
     pub Strips {
-        pub First { pin: P0 },
+        First { pin: P0 },
     }
 }

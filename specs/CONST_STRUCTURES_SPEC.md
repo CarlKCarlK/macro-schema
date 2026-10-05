@@ -58,7 +58,9 @@ From the [Device Envoy survey](DE_MACRO_SURVEY.md):
 1. Shared group fields go inside the group's braces, next to its members.
 2. Members are written `Name { ... }`, exactly like a top-level declaration.
 3. Every declaration and member accepts any field order, an optional
-   trailing comma, `#[attrs]`, and visibility.
+   trailing comma, and `#[attrs]`. Only a top-level declaration takes a
+   visibility; members always have their group's visibility (writing one is
+   an error).
 4. No field aliases. One spelling per field.
 5. `servo!` becomes a named declaration on both rp and esp.
 6. The framework is indifferent to whether different macros agree with each
@@ -75,7 +77,8 @@ From the [Device Envoy survey](DE_MACRO_SURVEY.md):
 Invocation  = Declaration ;
 Declaration = { ATTR } VIS NAME Body ;
 Body        = "{" [ Item { "," Item } [ "," ] ] "}" ;
-Item        = Field | Declaration ;
+Item        = Field | Member ;
+Member      = { ATTR } NAME Body ;            (* visibility comes from the group *)
 Field       = IDENT ":" Value ;
 Value       = Body | KindValue ;
 ```
@@ -99,7 +102,7 @@ led_strips! {
     pub LedStrips0 {
         pio: PIO0,
         Gpio0LedStrip { pin: PIN_0, len: 8, max_current: Current::Milliamps(25) },
-        pub Gpio4Led2d {
+        Gpio4Led2d {
             pin: PIN_4,
             len: 96,
             max_current: Current::Milliamps(250),
@@ -122,7 +125,7 @@ i2cs! {
         i2c: I2C0,
         sda_pin: PIN_4,
         scl_pin: PIN_5,
-        pub Top { width: 16, height: 2, address: 0x27 },
+        Top { width: 16, height: 2, address: 0x27 },
     }
 }
 

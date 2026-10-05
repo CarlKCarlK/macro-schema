@@ -146,16 +146,27 @@ enum Given {
 
 impl Declaration {
     fn parse_top(input: ParseStream, body: &BodySpec) -> Result<Self> {
-        let declaration = Self::parse(input, body)?;
+        let declaration = Self::parse(input, body, None)?;
         if !input.is_empty() {
             return Err(input.error("unexpected tokens after the declaration body"));
         }
         Ok(declaration)
     }
 
-    fn parse(input: ParseStream, body: &BodySpec) -> Result<Self> {
+    /// `group_vis` is `Some` for a member, which takes its group's visibility.
+    fn parse(input: ParseStream, body: &BodySpec, group_vis: Option<&Visibility>) -> Result<Self> {
         let attrs = input.call(Attribute::parse_outer)?;
-        let vis = input.parse()?;
+        let written_vis: Visibility = input.parse()?;
+        let vis = match group_vis {
+            None => written_vis,
+            Some(_) if !matches!(written_vis, Visibility::Inherited) => {
+                return Err(Error::new_spanned(
+                    written_vis,
+                    "members take their group's visibility; remove this visibility",
+                ));
+            }
+            Some(group_vis) => group_vis.clone(),
+        };
         let name: Ident = input.parse()?;
         if input.peek(Token![:]) && input.peek2(token::Brace) {
             return Err(input.error(format!(
@@ -174,7 +185,7 @@ impl Declaration {
                         body.expected_list()
                     )));
                 };
-                members.push(Self::parse(&content, &members_spec.body)?);
+                members.push(Self::parse(&content, &members_spec.body, Some(&vis))?);
             } else {
                 fields.push(parse_field(&content, body)?);
             }

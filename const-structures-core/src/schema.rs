@@ -485,7 +485,7 @@ fn syntax_lines(body: &BodySpec, depth: usize, doc: &mut String) -> Result<()> {
     }
     if let Some(members) = &body.members {
         doc.push_str(&format!(
-            "{indent}[<attributes>] [<visibility>] <MemberName> {{ // {} members\n",
+            "{indent}[<attributes>] <MemberName> {{ // {} members; visibility comes from the group\n",
             members.count_text()
         ));
         syntax_lines(&members.body, depth + 1, doc)?;

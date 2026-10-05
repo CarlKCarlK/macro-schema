@@ -27,7 +27,7 @@ demo::strips! {
         bus: BUS1,
         First { pin: P0 },
         #[derive(Debug)]
-        pub(crate) Second { panel: { width: 12 }, pin: P1, dma: DMA7 },
+        Second { panel: { width: 12 }, pin: P1, dma: DMA7 },
     }
 }
 
@@ -35,7 +35,7 @@ macro_rules! forward_vis {
     ($vis:vis $group:ident, $member:ident) => {
         demo::strips! {
             $vis $group {
-                $vis $member { pin: P5 },
+                $member { pin: P5 },
             }
         }
     };
