@@ -41,8 +41,8 @@ impl Kind {
     pub fn parse_value(self, input: ParseStream, field_name: &Ident) -> Result<Value> {
         let parsed = match self {
             Self::Ident => input.parse().map(Value::Ident),
-            Self::Expr => input.parse().map(Value::Expr),
-            Self::Type => input.parse().map(Value::Type),
+            Self::Expr => input.parse().map(|expr| Value::Expr(Box::new(expr))),
+            Self::Type => input.parse().map(|ty| Value::Type(Box::new(ty))),
         };
         parsed.map_err(|error| {
             syn::Error::new(
@@ -56,8 +56,8 @@ impl Kind {
 #[derive(Clone)]
 pub enum Value {
     Ident(Ident),
-    Expr(Expr),
-    Type(Type),
+    Expr(Box<Expr>),
+    Type(Box<Type>),
 }
 
 impl Value {

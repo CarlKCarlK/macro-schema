@@ -1,10 +1,10 @@
-use std::collections::HashSet;
-
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    Attribute, Error, Expr, ExprLit, Ident, Lit, Meta, MetaNameValue, Path, Result, Token, braced,
+    Attribute, Error, Expr, ExprLit, Ident, Lit, LitInt, Meta, MetaNameValue, Path, Result, Token,
+    braced, bracketed,
     parse::{Parse, ParseStream},
+    token,
 };
 
 use crate::value::{Kind, Value};
@@ -49,10 +49,10 @@ impl Parse for Definition {
     }
 }
 
-/// `GENERATOR_PATH { FIELD_SPEC, ... }`.
+/// `GENERATOR_PATH { BODY }`.
 pub struct Schema {
     pub generator: Path,
-    pub fields: Vec<FieldSpec>,
+    pub body: BodySpec,
 }
 
 impl Parse for Schema {
@@ -60,24 +60,63 @@ impl Parse for Schema {
         let generator = input.parse()?;
         let content;
         braced!(content in input);
-        let fields: Vec<FieldSpec> = content
-            .parse_terminated(FieldSpec::parse, Token![,])?
-            .into_iter()
-            .collect();
-        let mut seen = HashSet::new();
-        for field in &fields {
-            if !seen.insert(field.name.to_string()) {
-                return Err(Error::new(
-                    field.name.span(),
-                    format!("duplicate schema field `{}`", field.name),
-                ));
-            }
-        }
-        Ok(Self { generator, fields })
+        let body = BodySpec::parse(&content, Context::Top)?;
+        Ok(Self { generator, body })
     }
 }
 
-impl Schema {
+/// Where a body appears; decides whether members and `by_index` are allowed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Context {
+    Top,
+    Member,
+    /// A nested block; `in_member` says whether it sits inside a member.
+    Block { in_member: bool },
+}
+
+/// The fields (and at most one members section) of a declaration or block.
+pub struct BodySpec {
+    pub fields: Vec<FieldSpec>,
+    pub members: Option<Box<MembersSpec>>,
+}
+
+impl BodySpec {
+    fn parse(input: ParseStream, context: Context) -> Result<Self> {
+        let mut fields: Vec<FieldSpec> = Vec::new();
+        let mut members: Option<Box<MembersSpec>> = None;
+        while !input.is_empty() {
+            let attrs = input.call(Attribute::parse_outer)?;
+            let doc = doc_text(&attrs)?;
+            if is_members_start(input) {
+                let keyword: Ident = input.parse()?;
+                if context != Context::Top {
+                    return Err(Error::new(
+                        keyword.span(),
+                        "members are allowed only at the top level of a schema",
+                    ));
+                }
+                if members.is_some() {
+                    return Err(Error::new(keyword.span(), "duplicate members section"));
+                }
+                members = Some(Box::new(MembersSpec::parse(input, doc)?));
+            } else {
+                let field = FieldSpec::parse(input, doc, context)?;
+                if fields.iter().any(|earlier| earlier.name == field.name) {
+                    return Err(Error::new(
+                        field.name.span(),
+                        format!("duplicate schema field `{}`", field.name),
+                    ));
+                }
+                fields.push(field);
+            }
+            if input.is_empty() {
+                break;
+            }
+            input.parse::<Token![,]>()?;
+        }
+        Ok(Self { fields, members })
+    }
+
     pub fn field(&self, name: &Ident) -> Option<&FieldSpec> {
         self.fields.iter().find(|field| field.name == *name)
     }
@@ -91,33 +130,142 @@ impl Schema {
     }
 }
 
-/// `{/// doc} NAME: KIND [= DEFAULT]`.
+/// `members MIN..=MAX` (a field named `members` is written `members: ...`).
+fn is_members_start(input: ParseStream) -> bool {
+    let fork = input.fork();
+    fork.parse::<Ident>()
+        .is_ok_and(|ident| ident == "members" && fork.peek(LitInt))
+}
+
+/// `{/// doc} members MIN..=MAX { BODY }`.
+pub struct MembersSpec {
+    pub doc: String,
+    pub min: usize,
+    pub max: usize,
+    pub body: BodySpec,
+}
+
+impl MembersSpec {
+    fn parse(input: ParseStream, doc: String) -> Result<Self> {
+        let min_lit: LitInt = input.parse()?;
+        input.parse::<Token![..=]>()?;
+        let max_lit: LitInt = input.parse()?;
+        let min: usize = min_lit.base10_parse()?;
+        let max: usize = max_lit.base10_parse()?;
+        if min > max {
+            return Err(Error::new(max_lit.span(), "member range is empty"));
+        }
+        let content;
+        braced!(content in input);
+        let body = BodySpec::parse(&content, Context::Member)?;
+        Ok(Self {
+            doc,
+            min,
+            max,
+            body,
+        })
+    }
+
+    pub fn count_text(&self) -> String {
+        if self.min == self.max {
+            format!("exactly {}", self.min)
+        } else {
+            format!("{} to {}", self.min, self.max)
+        }
+    }
+}
+
+/// `{/// doc} NAME [?] : (KIND [= DEFAULT] | { BODY })`.
 pub struct FieldSpec {
     pub doc: String,
     pub name: Ident,
-    pub kind: Kind,
-    pub default: Option<Value>,
+    /// Written `name?:`; the generator receives `[]` or `[value]`.
+    pub optional: bool,
+    pub shape: Shape,
 }
 
-impl Parse for FieldSpec {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let attrs = input.call(Attribute::parse_outer)?;
-        let doc = doc_text(&attrs)?;
-        let name = input.parse()?;
+pub enum Shape {
+    Leaf {
+        kind: Kind,
+        default: Option<Default>,
+    },
+    Block(BodySpec),
+}
+
+pub enum Default {
+    Value(Value),
+    /// `by_index[A, B, ...]`: the member at index `i` defaults to the `i`th value.
+    ByIndex(Vec<Value>),
+}
+
+impl FieldSpec {
+    fn parse(input: ParseStream, doc: String, context: Context) -> Result<Self> {
+        let name: Ident = input.parse()?;
+        let optional = input.peek(Token![?]);
+        if optional {
+            input.parse::<Token![?]>()?;
+        }
         input.parse::<Token![:]>()?;
-        let kind = Kind::from_ident(&input.parse()?)?;
-        let default = if input.peek(Token![=]) {
-            input.parse::<Token![=]>()?;
-            Some(kind.parse_value(input, &name)?)
+        let shape = if input.peek(token::Brace) {
+            let content;
+            braced!(content in input);
+            let in_member = matches!(
+                context,
+                Context::Member | Context::Block { in_member: true }
+            );
+            Shape::Block(BodySpec::parse(&content, Context::Block { in_member })?)
         } else {
-            None
+            let kind = Kind::from_ident(&input.parse()?)?;
+            let default = if input.peek(Token![=]) {
+                let equals = input.parse::<Token![=]>()?;
+                if optional {
+                    return Err(Error::new(
+                        equals.span,
+                        "an optional (`?`) field cannot also have a default",
+                    ));
+                }
+                Some(Default::parse(input, kind, &name, context)?)
+            } else {
+                None
+            };
+            Shape::Leaf { kind, default }
         };
         Ok(Self {
             doc,
             name,
-            kind,
-            default,
+            optional,
+            shape,
         })
+    }
+}
+
+impl Default {
+    fn parse(input: ParseStream, kind: Kind, field_name: &Ident, context: Context) -> Result<Self> {
+        let fork = input.fork();
+        let is_by_index = fork
+            .parse::<Ident>()
+            .is_ok_and(|ident| ident == "by_index" && fork.peek(token::Bracket));
+        if !is_by_index {
+            return Ok(Self::Value(kind.parse_value(input, field_name)?));
+        }
+        let keyword: Ident = input.parse()?;
+        if matches!(context, Context::Top | Context::Block { in_member: false }) {
+            return Err(Error::new(
+                keyword.span(),
+                "`by_index` defaults are allowed only in member fields",
+            ));
+        }
+        let content;
+        bracketed!(content in input);
+        let mut values = Vec::new();
+        while !content.is_empty() {
+            values.push(kind.parse_value(&content, field_name)?);
+            if content.is_empty() {
+                break;
+            }
+            content.parse::<Token![,]>()?;
+        }
+        Ok(Self::ByIndex(values))
     }
 }
 
@@ -171,38 +319,120 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
     })
 }
 
-/// Syntax block and field table appended to the macro's hand-written docs.
-fn macro_doc(macro_name: &Ident, schema: &Schema) -> Result<String> {
+/// Syntax block and field tables appended to the macro's hand-written docs.
+pub(crate) fn macro_doc(macro_name: &Ident, schema: &Schema) -> Result<String> {
     let mut doc = String::from("\n\n**Syntax:**\n\n```text\n");
     doc.push_str(&format!("{macro_name}! {{\n"));
     doc.push_str("    [<attributes>] [<visibility>] <Name> {\n");
-    for field in &schema.fields {
-        let default = match &field.default {
-            Some(value) => format!(" // optional, default: {}", value.pretty()?),
-            None => String::new(),
-        };
-        doc.push_str(&format!(
-            "        {}: <{}>,{default}\n",
-            field.name,
-            field.kind.name()
-        ));
-    }
+    syntax_lines(&schema.body, 2, &mut doc)?;
     doc.push_str("    }\n}\n```\n\n**Fields:**\n\n");
-    doc.push_str("| Field | Kind | Default | Description |\n");
-    doc.push_str("| ----- | ---- | ------- | ----------- |\n");
-    for field in &schema.fields {
-        let default = match &field.default {
-            Some(value) => format!("`{}`", escape_cell(&value.pretty()?)),
-            None => "required".to_owned(),
-        };
+    field_table(&schema.body.fields, &mut doc)?;
+    if let Some(members) = &schema.body.members {
         doc.push_str(&format!(
-            "| `{}` | {} | {default} | {} |\n",
-            field.name,
-            field.kind.name(),
-            escape_cell(&field.doc)
+            "\n**Member fields** ({} members{}):\n\n",
+            members.count_text(),
+            doc_suffix(&members.doc)
         ));
+        field_table(&members.body.fields, &mut doc)?;
     }
     Ok(doc)
+}
+
+fn doc_suffix(doc: &str) -> String {
+    if doc.is_empty() {
+        String::new()
+    } else {
+        format!("; {doc}")
+    }
+}
+
+fn syntax_lines(body: &BodySpec, depth: usize, doc: &mut String) -> Result<()> {
+    let indent = "    ".repeat(depth);
+    for field in &body.fields {
+        match &field.shape {
+            Shape::Leaf { kind, default } => {
+                let note = match (default, field.optional) {
+                    (Some(default), _) => {
+                        format!(" // optional, default: {}", default_text(default, "")?)
+                    }
+                    (None, true) => " // optional".to_owned(),
+                    (None, false) => String::new(),
+                };
+                doc.push_str(&format!(
+                    "{indent}{}: <{}>,{note}\n",
+                    field.name,
+                    kind.name()
+                ));
+            }
+            Shape::Block(block) => {
+                let note = if field.optional { " // optional" } else { "" };
+                doc.push_str(&format!("{indent}{}: {{{note}\n", field.name));
+                syntax_lines(block, depth + 1, doc)?;
+                doc.push_str(&format!("{indent}}},\n"));
+            }
+        }
+    }
+    if let Some(members) = &body.members {
+        doc.push_str(&format!(
+            "{indent}[<attributes>] [<visibility>] <MemberName> {{ // {} members\n",
+            members.count_text()
+        ));
+        syntax_lines(&members.body, depth + 1, doc)?;
+        doc.push_str(&format!("{indent}}},\n"));
+    }
+    Ok(())
+}
+
+fn field_table(fields: &[FieldSpec], doc: &mut String) -> Result<()> {
+    doc.push_str("| Field | Kind | Default | Description |\n");
+    doc.push_str("| ----- | ---- | ------- | ----------- |\n");
+    field_rows(fields, "", doc)
+}
+
+fn field_rows(fields: &[FieldSpec], prefix: &str, doc: &mut String) -> Result<()> {
+    for field in fields {
+        let path = format!("{prefix}{}", field.name);
+        let (kind, default) = match &field.shape {
+            Shape::Leaf { kind, default } => {
+                let default = match (default, field.optional) {
+                    (Some(default), _) => escape_cell(&default_text(default, "`")?),
+                    (None, true) => "optional".to_owned(),
+                    (None, false) => "required".to_owned(),
+                };
+                (kind.name(), default)
+            }
+            Shape::Block(_) => {
+                let default = if field.optional {
+                    "optional"
+                } else {
+                    "required"
+                };
+                ("block", default.to_owned())
+            }
+        };
+        doc.push_str(&format!(
+            "| `{path}` | {kind} | {default} | {} |\n",
+            escape_cell(&field.doc)
+        ));
+        if let Shape::Block(block) = &field.shape {
+            field_rows(&block.fields, &format!("{path}."), doc)?;
+        }
+    }
+    Ok(())
+}
+
+/// `quote` wraps each value, e.g. in backticks for Markdown table cells.
+fn default_text(default: &Default, quote: &str) -> Result<String> {
+    Ok(match default {
+        Default::Value(value) => format!("{quote}{}{quote}", value.pretty()?),
+        Default::ByIndex(values) => {
+            let values = values
+                .iter()
+                .map(|value| Ok(format!("{quote}{}{quote}", value.pretty()?)))
+                .collect::<Result<Vec<_>>>()?;
+            format!("by member index: {}", values.join(", "))
+        }
+    })
 }
 
 pub fn escape_cell(text: &str) -> String {

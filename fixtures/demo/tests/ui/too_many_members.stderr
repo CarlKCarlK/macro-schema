@@ -1,0 +1,5 @@
+error: `strips!` takes 1 to 2 members; found 3
+ --> tests/ui/too_many_members.rs:5:9
+  |
+5 |         C { pin: P2, dma: DMA2 },
+  |         ^

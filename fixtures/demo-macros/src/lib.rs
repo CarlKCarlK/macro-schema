@@ -8,3 +8,24 @@ const_structures::define! {
         debounce_ms: expr = 20,
     }
 }
+
+const_structures::define! {
+    pub demo_strips as strips => ::demo::__strips_generate {
+        /// Shared bus.
+        bus: ident = BUS0,
+        /// One strip per member.
+        members 1..=2 {
+            /// Data pin.
+            pin: ident,
+            /// Channel.
+            dma: ident = by_index[DMA0, DMA1],
+            /// Optional panel geometry.
+            panel?: {
+                /// Width in pixels.
+                width: expr,
+                /// Font.
+                font: expr = 6,
+            },
+        },
+    }
+}

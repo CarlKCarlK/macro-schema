@@ -22,6 +22,26 @@ fn internal_invocation() {
     assert_eq!(ButtonWatchGenerated::PIN, "PIN_13");
 }
 
+demo::strips! {
+    pub Strips {
+        bus: BUS1,
+        First { pin: P0 },
+        #[derive(Debug)]
+        pub(crate) Second { panel: { width: 12 }, pin: P1, dma: DMA7 },
+    }
+}
+
+#[test]
+fn members() {
+    assert_eq!(Strips::BUS, "BUS1");
+    assert_eq!(Strips::MEMBER_COUNT, 2);
+    assert_eq!((First::INDEX, First::PIN, First::DMA, First::PANEL), (0, "P0", "DMA0", None));
+    assert_eq!(
+        (Second::INDEX, Second::PIN, Second::DMA, Second::PANEL),
+        (1, "P1", "DMA7", Some((12, 6)))
+    );
+}
+
 #[test]
 fn ui() {
     let cases = trybuild::TestCases::new();
