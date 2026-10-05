@@ -289,9 +289,11 @@ fn resolve_members<'a>(
 ) -> Vec<(&'a Declaration, Vec<Resolved>)> {
     let members = &declaration.members;
     let count = members.len();
-    if count < members_spec.min || count > members_spec.max {
-        let span = members
-            .get(members_spec.max)
+    let too_many = members_spec.max.is_some_and(|max| count > max);
+    if count < members_spec.min || too_many {
+        let span = members_spec
+            .max
+            .and_then(|max| members.get(max))
             .map_or(declaration.name.span(), |member| member.name.span());
         errors.push(Error::new(
             span,

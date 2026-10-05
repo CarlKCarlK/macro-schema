@@ -175,24 +175,30 @@ fn is_members_start(input: ParseStream) -> bool {
         .is_ok_and(|ident| ident == "members" && fork.peek(LitInt))
 }
 
-/// `{/// doc} members MIN..=MAX { BODY }`.
+/// `{/// doc} members MIN..=MAX { BODY }` or, with no upper limit, `members MIN.. { BODY }`.
 pub struct MembersSpec {
     pub doc: String,
     pub min: usize,
-    pub max: usize,
+    pub max: Option<usize>,
     pub body: BodySpec,
 }
 
 impl MembersSpec {
     fn parse(input: ParseStream, doc: String) -> Result<Self> {
         let min_lit: LitInt = input.parse()?;
-        input.parse::<Token![..=]>()?;
-        let max_lit: LitInt = input.parse()?;
         let min: usize = min_lit.base10_parse()?;
-        let max: usize = max_lit.base10_parse()?;
-        if min > max {
-            return Err(Error::new(max_lit.span(), "member range is empty"));
-        }
+        let max = if input.peek(Token![..=]) {
+            input.parse::<Token![..=]>()?;
+            let max_lit: LitInt = input.parse()?;
+            let max: usize = max_lit.base10_parse()?;
+            if min > max {
+                return Err(Error::new(max_lit.span(), "member range is empty"));
+            }
+            Some(max)
+        } else {
+            input.parse::<Token![..]>()?;
+            None
+        };
         let content;
         braced!(content in input);
         let body = BodySpec::parse(&content, Context::Member)?;
@@ -205,10 +211,10 @@ impl MembersSpec {
     }
 
     pub fn count_text(&self) -> String {
-        if self.min == self.max {
-            format!("exactly {}", self.min)
-        } else {
-            format!("{} to {}", self.min, self.max)
+        match self.max {
+            None => format!("at least {}", self.min),
+            Some(max) if max == self.min => format!("exactly {max}"),
+            Some(max) => format!("{} to {max}", self.min),
         }
     }
 }

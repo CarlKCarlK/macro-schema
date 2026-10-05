@@ -378,3 +378,16 @@ fn expand_rejects_member_visibility() {
         Some("members take their group's visibility; remove this visibility")
     );
 }
+
+#[test]
+fn members_may_have_no_upper_limit() -> Result<()> {
+    let schema = "__lcds_generate { members 1.. { address: expr } }";
+    let input = quote! { Lcds { A { address: 1 }, B { address: 2 }, C { address: 3 } } };
+    let output = run(schema, "lcds", input)?.to_string();
+    assert!(output.contains("member_count : 3"), "{output}");
+    assert_eq!(
+        error_message(run(schema, "lcds", quote! { Lcds {} })).as_deref(),
+        Some("`lcds!` takes at least 1 members; found 0")
+    );
+    Ok(())
+}
