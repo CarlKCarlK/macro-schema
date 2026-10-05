@@ -76,8 +76,7 @@ pub(crate) fn expand_parts(
     body: &BodySpec,
     input: TokenStream,
 ) -> Result<TokenStream> {
-    let declaration =
-        (|stream: ParseStream| Declaration::parse_top(stream, body)).parse2(input)?;
+    let declaration = (|stream: ParseStream| Declaration::parse_top(stream, body)).parse2(input)?;
     let mut errors = Errors::default();
     let fields = resolve_fields(
         &declaration.fields,
@@ -86,10 +85,10 @@ pub(crate) fn expand_parts(
         None,
         &mut errors,
     );
-    let members =
-        body.members.as_ref().map(|members_spec| {
-            resolve_members(macro_name, &declaration, members_spec, &mut errors)
-        });
+    let members = body
+        .members
+        .as_ref()
+        .map(|members_spec| resolve_members(macro_name, &declaration, members_spec, &mut errors));
     errors.finish()?;
 
     let mut doc = instance_doc(macro_name, None, &declaration.name, &fields)?;

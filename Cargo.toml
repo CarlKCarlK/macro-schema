@@ -5,6 +5,7 @@ members = [
     "const-structures-core",
     "fixtures/demo",
     "fixtures/renamed-user",
+    "fixtures/alias-regression",
 ]
 
 [workspace.package]

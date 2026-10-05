@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "alias-regression"
+version = "0.1.0"
+dependencies = [
+ "const-structures",
+ "trybuild",
+]
+
+[[package]]
 name = "const-structures"
 version = "0.1.0"
 dependencies = [
@@ -123,6 +131,7 @@ dependencies = [
 name = "renamed-user"
 version = "0.1.0"
 dependencies = [
+ "alias-regression",
  "demo",
 ]
 

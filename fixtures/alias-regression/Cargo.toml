@@ -1,0 +1,14 @@
+[package]
+name = "alias-regression"
+description = "Regression fixture for the bare-name alias that define! relies on."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+const-structures = { path = "../.." }
+
+[dev-dependencies]
+trybuild.workspace = true

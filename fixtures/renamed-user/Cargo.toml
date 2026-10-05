@@ -9,3 +9,4 @@ license.workspace = true
 
 [dependencies]
 renamed_demo = { package = "demo", path = "../demo" }
+renamed_alias = { package = "alias-regression", path = "../alias-regression" }

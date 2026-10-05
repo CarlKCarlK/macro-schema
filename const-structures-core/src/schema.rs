@@ -61,7 +61,7 @@ fn dollar_crate_as_crate(tokens: TokenStream) -> TokenStream {
             TokenTree::Punct(punct)
                 if punct.as_char() == '$'
                     && matches!(tokens.peek(), Some(TokenTree::Ident(ident)) if ident == "crate") =>
-            {}
+                {}
             TokenTree::Group(group) => {
                 let mut new_group =
                     Group::new(group.delimiter(), dollar_crate_as_crate(group.stream()));

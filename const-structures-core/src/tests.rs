@@ -63,10 +63,7 @@ fn expand_fills_defaults_in_schema_order() -> Result<()> {
             gamma: Gamma::Srgb,
         }
     };
-    assert_eq!(
-        pretty(expected)?,
-        pretty(run(LED_SCHEMA, "led", input)?)?
-    );
+    assert_eq!(pretty(expected)?, pretty(run(LED_SCHEMA, "led", input)?)?);
     Ok(())
 }
 
