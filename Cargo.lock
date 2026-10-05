@@ -6,8 +6,8 @@ version = 4
 name = "const-structures"
 version = "0.1.0"
 dependencies = [
+ "const-structures-core",
  "const-structures-derive",
- "trybuild",
 ]
 
 [[package]]
@@ -26,6 +26,21 @@ name = "const-structures-derive"
 version = "0.1.0"
 dependencies = [
  "const-structures-core",
+]
+
+[[package]]
+name = "demo"
+version = "0.1.0"
+dependencies = [
+ "demo-macros",
+ "trybuild",
+]
+
+[[package]]
+name = "demo-macros"
+version = "0.1.0"
+dependencies = [
+ "const-structures",
 ]
 
 [[package]]

@@ -1,0 +1,5 @@
+error: field `pin` expects an identifier
+ --> tests/ui/wrong_kind.rs:2:16
+  |
+2 |     Bad { pin: 13 }
+  |                ^^

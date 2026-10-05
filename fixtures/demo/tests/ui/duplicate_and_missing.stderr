@@ -1,0 +1,11 @@
+error: duplicate field `debounce_ms`
+ --> tests/ui/duplicate_and_missing.rs:2:27
+  |
+2 |     Bad { debounce_ms: 5, debounce_ms: 6 }
+  |                           ^^^^^^^^^^^
+
+error: missing required field `pin`
+ --> tests/ui/duplicate_and_missing.rs:2:5
+  |
+2 |     Bad { debounce_ms: 5, debounce_ms: 6 }
+  |     ^^^

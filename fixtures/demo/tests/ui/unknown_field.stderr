@@ -1,0 +1,5 @@
+error: unknown field `debounce`; expected one of `pin`, `debounce_ms`
+ --> tests/ui/unknown_field.rs:2:23
+  |
+2 |     Bad { pin: PIN_3, debounce: 5 }
+  |                       ^^^^^^^^

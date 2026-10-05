@@ -1,5 +1,11 @@
 [workspace]
-members = [".", "const-structures-derive", "const-structures-core"]
+members = [
+    ".",
+    "const-structures-derive",
+    "const-structures-core",
+    "fixtures/demo-macros",
+    "fixtures/demo",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -27,6 +33,4 @@ license.workspace = true
 
 [dependencies]
 const-structures-derive.workspace = true
-
-[dev-dependencies]
-trybuild.workspace = true
+const-structures-core.workspace = true

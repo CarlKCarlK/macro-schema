@@ -129,32 +129,57 @@ i2cs! {
 servo! { pub Pan { pin: PIN_0, slice: PWM_SLICE0, channel: A } }
 ```
 
-## Pipeline
+## Architecture
 
 ```text
-TokenStream
-  -> generic parser: attrs, visibility, name, items (fields + members),
-     with each value parsed by the kind its schema declares
-  -> schema validation: unknown, duplicate, missing, member count,
-     cross-field constraints; defaults inserted
-  -> normalized spec: typed per macro, no token-order or spelling quirks
-  -> code generation hook (per macro): ordinary Rust items + rustdoc
+const-structures (general; knows nothing about any user library)
+    define!            declares one macro from a schema; generates its rustdoc
+    __core::expand     generic parse / validate / default / diagnostics
+
+<library>-macros (small proc-macro crate, one `define!` per macro)
+    const_structures::define! {
+        /// Hand-written intro.
+        pub button_watch => ::demo::__button_watch_generate {
+            /// GPIO pin for the button.
+            pin: ident,
+            /// Debounce interval in milliseconds.
+            debounce_ms: expr = 20,
+        }
+    }
+
+<library> (hand-written code generators, one `macro_rules!` arm each)
+    extern crate self as demo;           // so ::demo:: paths work internally
+    pub mod button { pub use demo_macros::button_watch; }
+    macro_rules! __button_watch_generate {
+        (attrs: [..], vis: [$vis:vis], name: $name:ident, doc: $doc:literal,
+         pin: $pin:ident, debounce_ms: $debounce_ms:expr,) => { ... };
+    }
+
+user
+    button_watch! { pub Status { pin: PIN_13 } }
 ```
 
-Most Device Envoy macros generate structs, statics, Embassy tasks, and
-methods, not only constant data, so code generation is a per-macro hook that
-receives a validated spec. The framework owns everything before that hook.
+Pipeline per invocation: user tokens -> parse against schema (values parsed by
+kind) -> unknown / duplicate / missing / wrong-kind errors, combined and
+spanned -> defaults filled -> one call to the generator with every field in
+schema order, plus `attrs`, `vis` (empty becomes `pub(self)`, because
+`$vis:vis` cannot match empty at the end of `[...]`), `name`, and `doc` (a
+table of the configuration used, defaults marked).
 
-## Open questions
+### Why the library needs a small proc-macro crate
 
-- Where the schema lives: inferred from an ordinary Rust struct with
-  attributes, a separate schema DSL, or plain data in the proc-macro crate.
-  Device Envoy's generated code depends on chip HAL types the schema crate
-  cannot see, which favors schemas as data in each proc-macro crate.
-- How a schema defined in one crate is visible to a macro invocation in
-  another (proc macros cannot see other items' definitions directly).
-- How per-member defaults that depend on member index (rp `led_strips!`
-  DMA auto-numbering) are expressed as schema data rather than code.
+Tested on rustc 1.98: a `#[macro_export] macro_rules!` that is itself produced
+by a macro cannot be referred to by an absolute path inside its own crate
+(`macro_expanded_macro_exports_accessed_by_absolute_paths`, deny-by-default,
+slated to become a hard error). Device Envoy re-exports macros from modules
+(`pub use crate::button_watch;`) and invokes them internally in its
+`*_generated` doc modules, so a pure `schema!`-generates-`macro_rules!`
+design fails there. A hand-written forwarder fixes the re-export but not the
+internal invocation. Proc macros have no such restriction, and `define!` can
+generate `#[proc_macro]` functions, so each schema is still declared once.
+
+The `fixtures/demo-macros` + `fixtures/demo` crates reproduce exactly this
+layout (module re-export, internal invocation, downstream use, rendered docs).
 
 ## Project layout and practice
 
