@@ -115,7 +115,17 @@ impl Declaration {
                 };
                 members.push(Self::parse(&content, &members_spec.body)?);
             } else {
-                fields.push(parse_field(&content, body)?);
+                let field = parse_field(&content, body)?;
+                if let Some(member) = members.last() {
+                    return Err(Error::new(
+                        field.0.span(),
+                        format!(
+                            "fields go before members; move `{}` above `{}`",
+                            field.0, member.name
+                        ),
+                    ));
+                }
+                fields.push(field);
             }
             if content.is_empty() {
                 break;

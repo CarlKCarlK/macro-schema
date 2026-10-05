@@ -355,3 +355,12 @@ fn expand_explains_colon_after_declaration_name() {
         Some("remove the `:` after `First`; declarations are written `First { ... }`")
     );
 }
+
+#[test]
+fn expand_requires_fields_before_members() {
+    let input = quote! { Strips { First { pin: P0 }, bus: BUS1 } };
+    assert_eq!(
+        error_message(expand(STRIPS_SCHEMA, "strips", input)).as_deref(),
+        Some("fields go before members; move `bus` above `First`")
+    );
+}

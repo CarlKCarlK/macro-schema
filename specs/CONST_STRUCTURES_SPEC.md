@@ -59,6 +59,7 @@ From the [Device Envoy survey](DE_MACRO_SURVEY.md):
 2. Members are written `Name { ... }`, exactly like a top-level declaration.
 3. Every declaration and member accepts any field order, an optional
    trailing comma, `#[attrs]`, and visibility.
+   A declaration's own fields come before its members.
 4. No field aliases. One spelling per field.
 5. `servo!` becomes a named declaration on both rp and esp.
 6. The framework is indifferent to whether different macros agree with each
