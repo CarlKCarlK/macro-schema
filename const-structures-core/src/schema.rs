@@ -1,53 +1,82 @@
-use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use proc_macro2::{Group, Span, TokenStream, TokenTree};
+use quote::{format_ident, quote};
 use syn::{
     Attribute, Error, Expr, ExprLit, Ident, Lit, LitInt, Meta, MetaNameValue, Path, Result, Token,
-    braced, bracketed,
-    parse::{Parse, ParseStream},
+    Visibility, braced, bracketed,
+    parse::{Parse, ParseStream, Parser},
     spanned::Spanned,
     token,
 };
 
 use crate::value::{Kind, Value};
 
-/// `define!` input: `{ATTR} [pub] NAME [as MACRO_NAME] => SCHEMA`.
+/// `define!` input: `{ATTR} VIS NAME => GENERATOR_PATH { BODY }`.
 ///
-/// `NAME` is the generated proc-macro function. `MACRO_NAME` (default `NAME`)
-/// is the name users see after the library re-exports it with
-/// `pub use ...::NAME as MACRO_NAME;`; docs and messages use it.
+/// `GENERATOR_PATH` is relative to the defining crate's root; the generated
+/// wrapper reaches it through `$crate`.
 pub struct Definition {
     pub attrs: Vec<Attribute>,
+    pub vis: Visibility,
     pub name: Ident,
-    pub macro_name: Ident,
-    /// Source text of the schema, re-parsed by the generated proc macro on each use.
-    pub schema_source: String,
+    /// Body tokens, embedded verbatim in the generated wrapper so `expand!` keeps their spans.
+    pub body_tokens: TokenStream,
     pub schema: Schema,
 }
 
 impl Parse for Definition {
     fn parse(input: ParseStream) -> Result<Self> {
         let attrs = input.call(Attribute::parse_outer)?;
-        if input.peek(Token![pub]) {
-            input.parse::<Token![pub]>()?;
-        }
+        let vis = input.parse()?;
         let name: Ident = input.parse()?;
-        let macro_name = if input.peek(Token![as]) {
-            input.parse::<Token![as]>()?;
-            input.parse()?
-        } else {
-            name.clone()
-        };
         input.parse::<Token![=>]>()?;
-        let schema_tokens: TokenStream = input.parse()?;
-        let schema = syn::parse2(schema_tokens.clone())?;
+        let generator: Path = input.parse()?;
+        if let Some(leading_colon) = generator.leading_colon {
+            return Err(Error::new_spanned(
+                leading_colon,
+                "the generator path is relative to this crate's root; drop the leading `::`",
+            ));
+        }
+        let content;
+        braced!(content in input);
+        let body_tokens: TokenStream = content.parse()?;
+        let body = parse_body.parse2(dollar_crate_as_crate(body_tokens.clone()))?;
         Ok(Self {
             attrs,
+            vis,
             name,
-            macro_name,
-            schema_source: schema_tokens.to_string(),
-            schema,
+            body_tokens,
+            schema: Schema { generator, body },
         })
     }
+}
+
+/// `define!` receives `$crate` in schema defaults as two tokens, `$` and `crate`, which
+/// syn cannot parse. For validation and docs, read it as `crate`; the wrapper embeds
+/// the original tokens, where `macro_rules!` turns them into a real `$crate`.
+fn dollar_crate_as_crate(tokens: TokenStream) -> TokenStream {
+    let mut output = Vec::new();
+    let mut tokens = tokens.into_iter().peekable();
+    while let Some(token) = tokens.next() {
+        match token {
+            TokenTree::Punct(punct)
+                if punct.as_char() == '$'
+                    && matches!(tokens.peek(), Some(TokenTree::Ident(ident)) if ident == "crate") =>
+            {}
+            TokenTree::Group(group) => {
+                let mut new_group =
+                    Group::new(group.delimiter(), dollar_crate_as_crate(group.stream()));
+                new_group.set_span(group.span());
+                output.push(TokenTree::Group(new_group));
+            }
+            other => output.push(other),
+        }
+    }
+    output.into_iter().collect()
+}
+
+/// Parses a top-level schema body (the part inside the braces).
+pub fn parse_body(input: ParseStream) -> Result<BodySpec> {
+    BodySpec::parse(input, Context::Top)
 }
 
 /// `GENERATOR_PATH { BODY }`.
@@ -357,25 +386,44 @@ impl FieldAttrs {
     }
 }
 
+/// Emits a hidden exported `macro_rules!` wrapper plus a bare-name `use` alias.
+///
+/// The alias must name the wrapper without a `crate::` path: rustc rejects
+/// absolute-path access to a `#[macro_export]` macro produced by macro expansion
+/// (`macro_expanded_macro_exports_accessed_by_absolute_paths`), but re-exporting it
+/// from textual scope gives it an ordinary path that other modules and crates can use.
 pub fn define(input: TokenStream) -> Result<TokenStream> {
     let Definition {
         attrs,
+        vis,
         name,
-        macro_name,
-        schema_source,
+        body_tokens,
         schema,
     } = syn::parse2(input)?;
-    let doc = macro_doc(&macro_name, &schema)?;
-    let macro_name = macro_name.to_string();
+    let doc = macro_doc(&name, &schema)?;
+    let macro_name = name.to_string();
+    let wrapper = format_ident!("__const_structures_{}", name);
+    let generator = &schema.generator;
+    let shared_attrs = attrs.iter().filter(|attr| !attr.path().is_ident("doc"));
     Ok(quote! {
+        #(#shared_attrs)*
+        #[doc(hidden)]
+        #[macro_export]
+        macro_rules! #wrapper {
+            ($($input:tt)*) => {
+                $crate::__const_structures_expand! {
+                    macro_name: #macro_name,
+                    generator: { $crate::#generator },
+                    schema: { #body_tokens },
+                    input: { $($input)* },
+                }
+            };
+        }
+
         #(#attrs)*
         #[doc = #doc]
-        #[proc_macro]
-        pub fn #name(input: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
-            ::const_structures::__core::expand(#schema_source, #macro_name, input.into())
-                .unwrap_or_else(|error| error.into_compile_error())
-                .into()
-        }
+        #[doc(inline)]
+        #vis use #wrapper as #name;
     })
 }
 

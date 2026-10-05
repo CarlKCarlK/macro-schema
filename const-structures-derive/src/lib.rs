@@ -6,3 +6,10 @@ pub fn define(input: TokenStream) -> TokenStream {
         .unwrap_or_else(|error| error.into_compile_error())
         .into()
 }
+
+#[proc_macro]
+pub fn expand(input: TokenStream) -> TokenStream {
+    const_structures_core::expand(input.into())
+        .unwrap_or_else(|error| error.into_compile_error())
+        .into()
+}

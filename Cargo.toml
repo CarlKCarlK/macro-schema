@@ -3,8 +3,8 @@ members = [
     ".",
     "const-structures-derive",
     "const-structures-core",
-    "fixtures/demo-macros",
     "fixtures/demo",
+    "fixtures/renamed-user",
 ]
 
 [workspace.package]
@@ -33,4 +33,3 @@ license.workspace = true
 
 [dependencies]
 const-structures-derive.workspace = true
-const-structures-core.workspace = true

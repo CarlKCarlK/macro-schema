@@ -133,53 +133,59 @@ servo! { pub Pan { pin: PIN_0, slice: PWM_SLICE0, channel: A } }
 
 ```text
 const-structures (general; knows nothing about any user library)
-    define!            declares one macro from a schema; generates its rustdoc
-    __core::expand     generic parse / validate / default / diagnostics
+    define!   declares one macro from a schema; generates its rustdoc
+    expand!   generic parse / validate / default / diagnostics
 
-<library>-macros (small proc-macro crate, one `define!` per macro)
-    const_structures::define! {
-        /// Hand-written intro.
-        pub button_watch => ::demo::__button_watch_generate {
-            /// GPIO pin for the button.
-            pin: ident,
-            /// Debounce interval in milliseconds.
-            debounce_ms: expr = 20,
+<library> (schemas live next to the code they generate)
+    #[doc(hidden)]
+    pub use const_structures::expand as __const_structures_expand;   // once, at crate root
+
+    pub mod button {
+        const_structures::define! {
+            /// Hand-written docs and examples (doctests run in this crate).
+            pub button_watch => __button_watch_generate {   // generator path is crate-relative
+                /// GPIO pin for the button.
+                pin: ident,
+                /// Debounce interval in milliseconds.
+                #[default_display = "20"]
+                debounce_ms: expr = $crate::DEFAULT_DEBOUNCE_MS,
+            }
         }
     }
 
-<library> (hand-written code generators, one `macro_rules!` arm each)
-    extern crate self as demo;           // so ::demo:: paths work internally
-    pub mod button { pub use demo_macros::button_watch; }
-    macro_rules! __button_watch_generate {
-        (attrs: [..], vis: [$vis:vis], name: $name:ident, doc: $doc:literal,
-         pin: $pin:ident, debounce_ms: $debounce_ms:expr,) => { ... };
-    }
-
+    macro_rules! __button_watch_generate { (attrs: [..], vis: [..], name: .., doc: ..,
+                                            pin: .., debounce_ms: ..,) => { ... } }
 user
     button_watch! { pub Status { pin: PIN_13 } }
 ```
 
-Pipeline per invocation: user tokens -> parse against schema (values parsed by
-kind) -> unknown / duplicate / missing / wrong-kind errors, combined and
-spanned -> defaults filled -> one call to the generator with every field in
-schema order, plus `attrs`, `vis` (empty becomes `pub(self)`, because
-`$vis:vis` cannot match empty at the end of `[...]`), `name`, and `doc` (a
-table of the configuration used, defaults marked).
+`define!` expands to a hidden `#[macro_export] macro_rules! __const_structures_NAME`
+with one catch-all rule, followed by `pub use __const_structures_NAME as NAME;`.
+That rule forwards `macro_name`, `generator: { $crate::GENERATOR }`, the schema body
+tokens, and the user's tokens to `$crate::__const_structures_expand!`, which
+validates, fills defaults, and calls the generator with every field present in
+schema order, plus `attrs`, `vis` (empty becomes `pub(self)`, because `$vis:vis`
+cannot match empty at the end of `[...]`), `name`, and `doc`.
 
-### Why the library needs a small proc-macro crate
+Because everything goes through `$crate`, a renamed dependency still works, and
+`$crate::...` is allowed in schema defaults (shown in docs through
+`#[default_display]`).
 
-Tested on rustc 1.98: a `#[macro_export] macro_rules!` that is itself produced
-by a macro cannot be referred to by an absolute path inside its own crate
-(`macro_expanded_macro_exports_accessed_by_absolute_paths`, deny-by-default,
-slated to become a hard error). Device Envoy re-exports macros from modules
-(`pub use crate::button_watch;`) and invokes them internally in its
-`*_generated` doc modules, so a pure `schema!`-generates-`macro_rules!`
-design fails there. A hand-written forwarder fixes the re-export but not the
-internal invocation. Proc macros have no such restriction, and `define!` can
-generate `#[proc_macro]` functions, so each schema is still declared once.
+### Why the alias works
 
-The `fixtures/demo-macros` + `fixtures/demo` crates reproduce exactly this
-layout (module re-export, internal invocation, downstream use, rendered docs).
+rustc rejects absolute-path access to a `#[macro_export]` macro that was itself
+produced by macro expansion (`macro_expanded_macro_exports_accessed_by_absolute_paths`,
+deny-by-default, slated to become a hard error). `pub use crate::__const_structures_NAME`
+triggers it. A bare `pub use __const_structures_NAME as NAME;` in the same expansion
+instead re-exports the macro from textual scope, which gives it an ordinary path;
+other modules and crates then reach it through that alias (`crate::button::button_watch`,
+a crate-root `pub use button::button_watch;`, downstream imports and full paths).
+Never refer to the hidden wrapper by its crate-root path.
+
+An earlier design generated one `#[proc_macro]` per schema, which forced each
+library to keep its schemas in a separate proc-macro crate. The alias removes that
+crate. Tested with the lint set to `forbid` in `fixtures/demo`, including internal
+invocations from another macro, and a renamed dependency in `fixtures/renamed-user`.
 
 ## Project layout and practice
 

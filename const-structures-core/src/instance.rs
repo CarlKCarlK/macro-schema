@@ -1,30 +1,93 @@
 use proc_macro2::{Literal, TokenStream};
 use quote::quote;
 use syn::{
-    Attribute, Error, Ident, Result, Token, Visibility, braced,
-    parse::{ParseStream, Parser},
+    Attribute, Error, Ident, LitStr, Result, Token, Visibility, braced,
+    parse::{Parse, ParseStream, Parser},
     token,
 };
 
 use crate::{
-    schema::{BodySpec, Default, FieldSpec, MembersSpec, Schema, Shape, escape_cell},
+    schema::{BodySpec, Default, FieldSpec, MembersSpec, Shape, escape_cell, parse_body},
     value::Value,
 };
 
-pub fn expand(schema_source: &str, macro_name: &str, input: TokenStream) -> Result<TokenStream> {
-    let schema: Schema = syn::parse_str(schema_source)?;
+/// `expand!` input, produced by the wrapper that `define!` generates:
+/// `macro_name: "NAME", generator: { PATH }, schema: { BODY }, input: { TOKENS },`.
+struct ExpandInput {
+    macro_name: String,
+    generator: TokenStream,
+    body: BodySpec,
+    input: TokenStream,
+}
+
+impl Parse for ExpandInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        expect_key(input, "macro_name")?;
+        let macro_name = input.parse::<LitStr>()?.value();
+        input.parse::<Token![,]>()?;
+        expect_key(input, "generator")?;
+        let generator = braced_tokens(input)?;
+        input.parse::<Token![,]>()?;
+        expect_key(input, "schema")?;
+        let content;
+        braced!(content in input);
+        let body = parse_body(&content)?;
+        input.parse::<Token![,]>()?;
+        expect_key(input, "input")?;
+        let user_input = braced_tokens(input)?;
+        input.parse::<Option<Token![,]>>()?;
+        Ok(Self {
+            macro_name,
+            generator,
+            body,
+            input: user_input,
+        })
+    }
+}
+
+fn expect_key(input: ParseStream, key: &str) -> Result<()> {
+    let ident: Ident = input.parse()?;
+    if ident != key {
+        return Err(Error::new(ident.span(), format!("expected `{key}`")));
+    }
+    input.parse::<Token![:]>()?;
+    Ok(())
+}
+
+fn braced_tokens(input: ParseStream) -> Result<TokenStream> {
+    let content;
+    braced!(content in input);
+    content.parse()
+}
+
+pub fn expand(input: TokenStream) -> Result<TokenStream> {
+    let ExpandInput {
+        macro_name,
+        generator,
+        body,
+        input,
+    } = syn::parse2(input)?;
+    expand_parts(&macro_name, &generator, &body, input)
+}
+
+pub(crate) fn expand_parts(
+    macro_name: &str,
+    generator: &TokenStream,
+    body: &BodySpec,
+    input: TokenStream,
+) -> Result<TokenStream> {
     let declaration =
-        (|stream: ParseStream| Declaration::parse_top(stream, &schema.body)).parse2(input)?;
+        (|stream: ParseStream| Declaration::parse_top(stream, body)).parse2(input)?;
     let mut errors = Errors::default();
     let fields = resolve_fields(
         &declaration.fields,
-        &schema.body,
+        body,
         &declaration.name,
         None,
         &mut errors,
     );
     let members =
-        schema.body.members.as_ref().map(|members_spec| {
+        body.members.as_ref().map(|members_spec| {
             resolve_members(macro_name, &declaration, members_spec, &mut errors)
         });
     errors.finish()?;
@@ -57,7 +120,6 @@ pub fn expand(schema_source: &str, macro_name: &str, input: TokenStream) -> Resu
         }
         None => TokenStream::new(),
     };
-    let generator = &schema.generator;
     let header = header_tokens(&declaration, &doc);
     let field_tokens = fields_tokens(&fields);
     Ok(quote! {

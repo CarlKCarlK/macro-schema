@@ -1,0 +1,11 @@
+[package]
+name = "renamed-user"
+description = "Fixture: uses demo's macros through a renamed dependency."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+renamed_demo = { package = "demo", path = "../demo" }

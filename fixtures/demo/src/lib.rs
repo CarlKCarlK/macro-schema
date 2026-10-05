@@ -1,22 +1,33 @@
-//! Fixture mirroring a device library: a hand-written generator, a module
-//! re-export of the schema-declared macro, and an internal invocation.
+//! Fixture mirroring a device library: schemas declared next to their generators,
+//! module and crate-root re-exports, internal invocations, and `$crate` in defaults.
+#![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 
-// Lets `::demo::...` paths emitted by demo-macros resolve inside this crate.
-extern crate self as demo;
+#[doc(hidden)]
+pub use const_structures::expand as __const_structures_expand;
+
+/// Default debounce interval, reached from a schema default through `$crate`.
+pub const DEFAULT_DEBOUNCE_MS: u32 = 20;
 
 pub mod button {
     //! Button support.
 
-    /// Watches a button in a background task.
-    ///
-    /// ```rust,no_run
-    /// demo::button::button_watch! {
-    ///     pub DocButton { pin: PIN_13 }
-    /// }
-    /// assert_eq!(DocButton::DEBOUNCE_MS, 20);
-    /// ```
-    #[doc(inline)]
-    pub use demo_macros::demo_button_watch as button_watch;
+    const_structures::define! {
+        /// Watches a button in a background task.
+        ///
+        /// ```rust,no_run
+        /// demo::button::button_watch! {
+        ///     pub DocButton { pin: PIN_13 }
+        /// }
+        /// assert_eq!(DocButton::DEBOUNCE_MS, 20);
+        /// ```
+        pub button_watch => __button_watch_generate {
+            /// GPIO pin for the button.
+            pin: ident,
+            /// Debounce interval in milliseconds.
+            #[default_display = "20"]
+            debounce_ms: expr = $crate::DEFAULT_DEBOUNCE_MS,
+        }
+    }
 
     pub mod button_watch_generated {
         //! Example of what [`button_watch!`](super::button_watch) generates.
@@ -27,9 +38,40 @@ pub mod button {
     }
 }
 
-/// Groups strips that share a bus.
-#[doc(inline)]
-pub use demo_macros::demo_strips as strips;
+// Crate-root path kept for `demo::button_watch!`; documented in `button`.
+#[doc(hidden)]
+pub use button::button_watch;
+
+macro_rules! internal_via_another_macro {
+    () => {
+        crate::button_watch! {
+            pub InternalViaMacro { pin: PIN_2 }
+        }
+    };
+}
+internal_via_another_macro!();
+
+const_structures::define! {
+    /// Groups strips that share a bus.
+    pub strips => __strips_generate {
+        /// Shared bus.
+        bus: ident = BUS0,
+        /// One strip per member.
+        members 1..=2 {
+            /// Data pin.
+            pin: ident,
+            /// Channel.
+            dma: ident = by_index[DMA0, DMA1],
+            /// Optional panel geometry.
+            panel?: {
+                /// Width in pixels.
+                width: expr,
+                /// Font.
+                font: expr = 6,
+            },
+        },
+    }
+}
 
 #[doc(hidden)]
 #[macro_export]

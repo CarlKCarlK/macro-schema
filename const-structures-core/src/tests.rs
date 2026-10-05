@@ -3,11 +3,12 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::{
-    Result, define, expand,
+    Result, define,
+    instance::expand_parts,
     schema::{Schema, macro_doc},
 };
 
-const LED_SCHEMA: &str = "::demo::__led_generate {
+const LED_SCHEMA: &str = "__led_generate {
     /// GPIO pin.
     pin: ident,
     /// Number of LEDs.
@@ -17,6 +18,12 @@ const LED_SCHEMA: &str = "::demo::__led_generate {
     /// Color curve.
     gamma: expr = Gamma::Srgb,
 }";
+
+/// Expands `input` against a `GENERATOR { BODY }` schema, as the generated wrapper would.
+fn run(schema: &str, macro_name: &str, input: TokenStream) -> Result<TokenStream> {
+    let Schema { generator, body } = syn::parse_str(schema)?;
+    expand_parts(macro_name, &quote!(#generator), &body, input)
+}
 
 fn pretty(tokens: TokenStream) -> Result<String> {
     Ok(prettyplease::unparse(&syn::parse2(tokens)?))
@@ -45,7 +52,7 @@ fn expand_fills_defaults_in_schema_order() -> Result<()> {
         | `pio` | `PIO0` (default) |\n\
         | `gamma` | `Gamma::Srgb` (default) |\n";
     let expected = quote! {
-        ::demo::__led_generate! {
+        __led_generate! {
             attrs: [#[derive(Debug)]],
             vis: [pub(crate)],
             name: Status,
@@ -58,7 +65,7 @@ fn expand_fills_defaults_in_schema_order() -> Result<()> {
     };
     assert_eq!(
         pretty(expected)?,
-        pretty(expand(LED_SCHEMA, "led", input)?)?
+        pretty(run(LED_SCHEMA, "led", input)?)?
     );
     Ok(())
 }
@@ -67,7 +74,7 @@ fn expand_fills_defaults_in_schema_order() -> Result<()> {
 fn expand_reports_unknown_field() {
     let input = quote! { Status { pin: PIN_3, length: 8 } };
     assert_eq!(
-        error_message(expand(LED_SCHEMA, "led", input)).as_deref(),
+        error_message(run(LED_SCHEMA, "led", input)).as_deref(),
         Some("unknown field `length`; expected one of `pin`, `len`, `pio`, `gamma`")
     );
 }
@@ -76,7 +83,7 @@ fn expand_reports_unknown_field() {
 fn expand_reports_duplicate_and_missing_together() {
     let input = quote! { Status { pin: PIN_3, pin: PIN_4 } };
     assert_eq!(
-        error_message(expand(LED_SCHEMA, "led", input)).as_deref(),
+        error_message(run(LED_SCHEMA, "led", input)).as_deref(),
         Some("duplicate field `pin`\nmissing required field `len`")
     );
 }
@@ -85,51 +92,18 @@ fn expand_reports_duplicate_and_missing_together() {
 fn expand_parses_value_by_kind() {
     let input = quote! { Status { pin: 3, len: 8 } };
     assert_eq!(
-        error_message(expand(LED_SCHEMA, "led", input)).as_deref(),
+        error_message(run(LED_SCHEMA, "led", input)).as_deref(),
         Some("field `pin` expects an identifier")
     );
 }
 
 #[test]
-fn define_documents_fields() -> Result<()> {
-    let schema: TokenStream = LED_SCHEMA.parse()?;
+fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
     let input = quote! {
         /// An LED strip.
-        pub led => #schema
+        #[cfg(not(feature = "host"))]
+        pub led => __led_generate { pin: ident }
     };
-    let schema_source = schema.to_string();
-    let doc = "\n\n**Syntax:**\n\n```text\n\
-        led! {\n    [<attributes>] [<visibility>] <Name> {\n\
-        \x20       pin: <ident>,\n\
-        \x20       len: <expr>,\n\
-        \x20       pio: <ident>, // optional, default: PIO0\n\
-        \x20       gamma: <expr>, // optional, default: Gamma::Srgb\n\
-        \x20   }\n}\n```\n\n**Fields:**\n\n\
-        | Field | Kind | Default | Description |\n\
-        | ----- | ---- | ------- | ----------- |\n\
-        | `pin` | ident | required | GPIO pin. |\n\
-        | `len` | expr | required | Number of LEDs. |\n\
-        | `pio` | ident | `PIO0` | PIO resource. |\n\
-        | `gamma` | expr | `Gamma::Srgb` | Color curve. |\n";
-    let expected = quote! {
-        /// An LED strip.
-        #[doc = #doc]
-        #[proc_macro]
-        pub fn led(input: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
-            ::const_structures::__core::expand(#schema_source, "led", input.into())
-                .unwrap_or_else(|error| error.into_compile_error())
-                .into()
-        }
-    };
-    assert_eq!(pretty(expected)?, pretty(define(input)?)?);
-    Ok(())
-}
-
-#[test]
-fn define_as_names_the_macro_separately_from_the_function() -> Result<()> {
-    let schema = quote! { ::demo::__led_generate { pin: ident } };
-    let input = quote! { pub rp_led as led => #schema };
-    let schema_source = schema.to_string();
     let doc = "\n\n**Syntax:**\n\n```text\n\
         led! {\n    [<attributes>] [<visibility>] <Name> {\n\
         \x20       pin: <ident>,\n\
@@ -138,19 +112,62 @@ fn define_as_names_the_macro_separately_from_the_function() -> Result<()> {
         | ----- | ---- | ------- | ----------- |\n\
         | `pin` | ident | required |  |\n";
     let expected = quote! {
-        #[doc = #doc]
-        #[proc_macro]
-        pub fn rp_led(input: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
-            ::const_structures::__core::expand(#schema_source, "led", input.into())
-                .unwrap_or_else(|error| error.into_compile_error())
-                .into()
+        #[cfg(not(feature = "host"))]
+        #[doc(hidden)]
+        #[macro_export]
+        macro_rules! __const_structures_led {
+            ($($input:tt)*) => {
+                $crate::__const_structures_expand! {
+                    macro_name: "led",
+                    generator: { $crate::__led_generate },
+                    schema: { pin: ident },
+                    input: { $($input)* },
+                }
+            };
         }
+
+        /// An LED strip.
+        #[cfg(not(feature = "host"))]
+        #[doc = #doc]
+        #[doc(inline)]
+        pub use __const_structures_led as led;
     };
-    assert_eq!(pretty(expected)?, pretty(define(input)?)?);
+    assert_eq!(expected.to_string(), define(input)?.to_string());
     Ok(())
 }
 
-const STRIPS_SCHEMA: &str = "::demo::__strips_generate {
+#[test]
+fn define_rejects_absolute_generator_path() {
+    let input = quote! { pub led => ::demo::__led_generate { pin: ident } };
+    assert_eq!(
+        error_message(define(input)).as_deref(),
+        Some("the generator path is relative to this crate's root; drop the leading `::`")
+    );
+}
+
+#[test]
+fn expand_parses_wrapper_input() -> Result<()> {
+    let input = quote! {
+        macro_name: "led",
+        generator: { crate::__led_generate },
+        schema: { pin: ident },
+        input: { Status { pin: PIN_3 } },
+    };
+    let doc = "Generated by `led!`.\n\n| Field | Value |\n| ----- | ----- |\n| `pin` | `PIN_3` |\n";
+    let expected = quote! {
+        crate::__led_generate! {
+            attrs: [],
+            vis: [pub(self)],
+            name: Status,
+            doc: #doc,
+            pin: PIN_3,
+        }
+    };
+    assert_eq!(pretty(expected)?, pretty(crate::expand(input)?)?);
+    Ok(())
+}
+
+const STRIPS_SCHEMA: &str = "__strips_generate {
     /// Shared bus.
     bus: ident = BUS0,
     /// One strip per member.
@@ -192,7 +209,7 @@ fn expand_members_with_index_defaults_and_optional_block() -> Result<()> {
         | `dma` | `DMA1` (default) |\n\
         | `panel` | `{ width: 12, font: Font::Small }` |\n";
     let expected = quote! {
-        ::demo::__strips_generate! {
+        __strips_generate! {
             attrs: [],
             vis: [pub],
             name: Strips,
@@ -225,7 +242,7 @@ fn expand_members_with_index_defaults_and_optional_block() -> Result<()> {
     };
     assert_eq!(
         pretty(expected)?,
-        pretty(expand(STRIPS_SCHEMA, "strips", input)?)?
+        pretty(run(STRIPS_SCHEMA, "strips", input)?)?
     );
     Ok(())
 }
@@ -240,7 +257,7 @@ fn expand_reports_member_errors_together() {
         }
     };
     assert_eq!(
-        error_message(expand(STRIPS_SCHEMA, "strips", input)).as_deref(),
+        error_message(run(STRIPS_SCHEMA, "strips", input)).as_deref(),
         Some(
             "`strips!` takes 1 to 2 members; found 3\n\
              duplicate member `A`\n\
@@ -254,14 +271,14 @@ fn expand_reports_member_errors_together() {
 fn expand_rejects_members_where_schema_has_none() {
     let input = quote! { Status { pin: PIN_3, len: 1, Extra { pin: PIN_4 } } };
     assert_eq!(
-        error_message(expand(LED_SCHEMA, "led", input)).as_deref(),
+        error_message(run(LED_SCHEMA, "led", input)).as_deref(),
         Some("`Status` takes fields only; expected one of `pin`, `len`, `pio`, `gamma`")
     );
 }
 
 #[test]
 fn schema_rejects_by_index_outside_members() {
-    let input = quote! { pub bad => ::demo::gen { dma: ident = by_index[A, B] } };
+    let input = quote! { pub bad => gen { dma: ident = by_index[A, B] } };
     assert_eq!(
         error_message(define(input)).as_deref(),
         Some("`by_index` defaults are allowed only in member fields")
@@ -270,7 +287,7 @@ fn schema_rejects_by_index_outside_members() {
 
 #[test]
 fn schema_rejects_optional_with_default() {
-    let input = quote! { pub bad => ::demo::gen { pin?: ident = A } };
+    let input = quote! { pub bad => gen { pin?: ident = A } };
     assert_eq!(
         error_message(define(input)).as_deref(),
         Some("an optional (`?`) field cannot also have a default")
@@ -310,7 +327,7 @@ fn define_documents_members_and_blocks() -> Result<()> {
 
 #[test]
 fn default_display_overrides_docs_but_not_generated_tokens() -> Result<()> {
-    let schema_source = "::demo::__gen {
+    let schema_source = "__gen {
         /// Color curve.
         #[default_display = \"Gamma::Srgb\"]
         gamma: expr = ::demo::led_strip::Gamma::Srgb,
@@ -323,7 +340,7 @@ fn default_display_overrides_docs_but_not_generated_tokens() -> Result<()> {
         | Field | Value |\n| ----- | ----- |\n\
         | `gamma` | `Gamma::Srgb` (default) |\n";
     let expected = quote! {
-        ::demo::__gen! {
+        __gen! {
             attrs: [],
             vis: [pub(self)],
             name: Strip,
@@ -333,14 +350,14 @@ fn default_display_overrides_docs_but_not_generated_tokens() -> Result<()> {
     };
     assert_eq!(
         pretty(expected)?,
-        pretty(expand(schema_source, "led", quote! { Strip {} })?)?
+        pretty(run(schema_source, "led", quote! { Strip {} })?)?
     );
     Ok(())
 }
 
 #[test]
 fn schema_rejects_default_display_without_default() {
-    let input = quote! { pub bad => ::demo::gen { #[default_display = "X"] pin: ident } };
+    let input = quote! { pub bad => gen { #[default_display = "X"] pin: ident } };
     assert_eq!(
         error_message(define(input)).as_deref(),
         Some("`default_display` needs a single default value (`= ...`)")
@@ -351,7 +368,7 @@ fn schema_rejects_default_display_without_default() {
 fn expand_explains_colon_after_declaration_name() {
     let input = quote! { Strips { First: { pin: P0 } } };
     assert_eq!(
-        error_message(expand(STRIPS_SCHEMA, "strips", input)).as_deref(),
+        error_message(run(STRIPS_SCHEMA, "strips", input)).as_deref(),
         Some("remove the `:` after `First`; declarations are written `First { ... }`")
     );
 }

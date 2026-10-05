@@ -1,6 +1,6 @@
 [package]
 name = "demo"
-description = "Fixture: a device library that exposes macros declared in demo-macros."
+description = "Fixture: a device library that declares its macros next to their generators."
 publish = false
 version.workspace = true
 edition.workspace = true
@@ -8,7 +8,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-demo-macros = { path = "../demo-macros" }
+const-structures = { path = "../.." }
 
 [dev-dependencies]
 trybuild.workspace = true
