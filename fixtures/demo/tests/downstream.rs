@@ -48,7 +48,10 @@ fn members() {
     assert_eq!(ForwardedMember::PIN, "P5");
     assert_eq!(Strips::BUS, "BUS1");
     assert_eq!(Strips::MEMBER_COUNT, 2);
-    assert_eq!((First::INDEX, First::PIN, First::DMA, First::PANEL), (0, "P0", "DMA0", None));
+    assert_eq!(
+        (First::INDEX, First::PIN, First::DMA, First::PANEL),
+        (0, "P0", "DMA0", None)
+    );
     assert_eq!(
         (Second::INDEX, Second::PIN, Second::DMA, Second::PANEL),
         (1, "P1", "DMA7", Some((12, 6)))

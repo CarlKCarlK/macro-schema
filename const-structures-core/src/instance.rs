@@ -23,11 +23,10 @@ pub fn expand(schema_source: &str, macro_name: &str, input: TokenStream) -> Resu
         None,
         &mut errors,
     );
-    let members = schema
-        .body
-        .members
-        .as_ref()
-        .map(|members_spec| resolve_members(macro_name, &declaration, members_spec, &mut errors));
+    let members =
+        schema.body.members.as_ref().map(|members_spec| {
+            resolve_members(macro_name, &declaration, members_spec, &mut errors)
+        });
     errors.finish()?;
 
     let mut doc = instance_doc(macro_name, None, &declaration.name, &fields)?;
@@ -299,7 +298,10 @@ fn resolve_field(
             (wrap(quote!({ #tokens })), block_display(&inner), false)
         }
         (Some(Given::Block(_)), Shape::Leaf { .. }) => {
-            return Err(Error::new(spec.name.span(), "expected a value, not a block"));
+            return Err(Error::new(
+                spec.name.span(),
+                "expected a value, not a block",
+            ));
         }
         (None, _) if spec.optional => (quote!([]), "(not set)".to_owned(), false),
         (
@@ -308,7 +310,13 @@ fn resolve_field(
                 default: Some(Default::Value(value)),
                 ..
             },
-        ) => (quote!(#value), value.pretty()?, true),
+        ) => {
+            let display = match &spec.default_display {
+                Some(display) => display.clone(),
+                None => value.pretty()?,
+            };
+            (quote!(#value), display, true)
+        }
         (
             None,
             Shape::Leaf {

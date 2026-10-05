@@ -1,9 +1,10 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
     Attribute, Error, Expr, ExprLit, Ident, Lit, LitInt, Meta, MetaNameValue, Path, Result, Token,
     braced, bracketed,
     parse::{Parse, ParseStream},
+    spanned::Spanned,
     token,
 };
 
@@ -71,7 +72,9 @@ enum Context {
     Top,
     Member,
     /// A nested block; `in_member` says whether it sits inside a member.
-    Block { in_member: bool },
+    Block {
+        in_member: bool,
+    },
 }
 
 /// The fields (and at most one members section) of a declaration or block.
@@ -86,9 +89,15 @@ impl BodySpec {
         let mut members: Option<Box<MembersSpec>> = None;
         while !input.is_empty() {
             let attrs = input.call(Attribute::parse_outer)?;
-            let doc = doc_text(&attrs)?;
+            let FieldAttrs {
+                doc,
+                default_display,
+            } = FieldAttrs::parse(&attrs)?;
             if is_members_start(input) {
                 let keyword: Ident = input.parse()?;
+                if let Some((_, span)) = default_display {
+                    return Err(Error::new(span, "`default_display` belongs on a field"));
+                }
                 if context != Context::Top {
                     return Err(Error::new(
                         keyword.span(),
@@ -100,7 +109,7 @@ impl BodySpec {
                 }
                 members = Some(Box::new(MembersSpec::parse(input, doc)?));
             } else {
-                let field = FieldSpec::parse(input, doc, context)?;
+                let field = FieldSpec::parse(input, doc, default_display, context)?;
                 if fields.iter().any(|earlier| earlier.name == field.name) {
                     return Err(Error::new(
                         field.name.span(),
@@ -182,6 +191,9 @@ pub struct FieldSpec {
     /// Written `name?:`; the generator receives `[]` or `[value]`.
     pub optional: bool,
     pub shape: Shape,
+    /// `#[default_display = "..."]`: how docs show the default, when its generated
+    /// spelling (often a full path) is unreadable.
+    pub default_display: Option<String>,
 }
 
 pub enum Shape {
@@ -199,7 +211,12 @@ pub enum Default {
 }
 
 impl FieldSpec {
-    fn parse(input: ParseStream, doc: String, context: Context) -> Result<Self> {
+    fn parse(
+        input: ParseStream,
+        doc: String,
+        default_display: Option<(String, Span)>,
+        context: Context,
+    ) -> Result<Self> {
         let name: Ident = input.parse()?;
         let optional = input.peek(Token![?]);
         if optional {
@@ -230,11 +247,32 @@ impl FieldSpec {
             };
             Shape::Leaf { kind, default }
         };
+        let default_display = match default_display {
+            None => None,
+            Some((text, _))
+                if matches!(
+                    shape,
+                    Shape::Leaf {
+                        default: Some(Default::Value(_)),
+                        ..
+                    }
+                ) =>
+            {
+                Some(text)
+            }
+            Some((_, span)) => {
+                return Err(Error::new(
+                    span,
+                    "`default_display` needs a single default value (`= ...`)",
+                ));
+            }
+        };
         Ok(Self {
             doc,
             name,
             optional,
             shape,
+            default_display,
         })
     }
 }
@@ -269,32 +307,54 @@ impl Default {
     }
 }
 
-/// Joins `#[doc = "..."]` attributes into one string; rejects other attributes.
-fn doc_text(attrs: &[Attribute]) -> Result<String> {
-    let mut lines = Vec::new();
-    for attr in attrs {
-        match &attr.meta {
-            Meta::NameValue(MetaNameValue {
-                path,
-                value:
-                    Expr::Lit(ExprLit {
-                        lit: Lit::Str(text),
-                        ..
-                    }),
-                ..
-            }) if path.is_ident("doc") => {
-                let line = text.value();
-                lines.push(line.strip_prefix(' ').unwrap_or(&line).to_owned());
-            }
-            _ => {
-                return Err(Error::new_spanned(
-                    attr,
-                    "only doc comments are allowed on schema fields",
-                ));
+/// Attributes allowed on schema fields: doc comments and `#[default_display = "..."]`.
+struct FieldAttrs {
+    doc: String,
+    default_display: Option<(String, Span)>,
+}
+
+impl FieldAttrs {
+    fn parse(attrs: &[Attribute]) -> Result<Self> {
+        let mut lines = Vec::new();
+        let mut default_display = None;
+        for attr in attrs {
+            match &attr.meta {
+                Meta::NameValue(MetaNameValue {
+                    path,
+                    value:
+                        Expr::Lit(ExprLit {
+                            lit: Lit::Str(text),
+                            ..
+                        }),
+                    ..
+                }) if path.is_ident("doc") => {
+                    let line = text.value();
+                    lines.push(line.strip_prefix(' ').unwrap_or(&line).to_owned());
+                }
+                Meta::NameValue(MetaNameValue {
+                    path,
+                    value:
+                        Expr::Lit(ExprLit {
+                            lit: Lit::Str(text),
+                            ..
+                        }),
+                    ..
+                }) if path.is_ident("default_display") => {
+                    default_display = Some((text.value(), path.span()));
+                }
+                _ => {
+                    return Err(Error::new_spanned(
+                        attr,
+                        "only doc comments and `#[default_display = \"...\"]` are allowed on schema fields",
+                    ));
+                }
             }
         }
+        Ok(Self {
+            doc: lines.join(" "),
+            default_display,
+        })
     }
-    Ok(lines.join(" "))
 }
 
 pub fn define(input: TokenStream) -> Result<TokenStream> {
@@ -353,7 +413,10 @@ fn syntax_lines(body: &BodySpec, depth: usize, doc: &mut String) -> Result<()> {
             Shape::Leaf { kind, default } => {
                 let note = match (default, field.optional) {
                     (Some(default), _) => {
-                        format!(" // optional, default: {}", default_text(default, "")?)
+                        format!(
+                            " // optional, default: {}",
+                            default_text(default, field.default_display.as_deref(), "")?
+                        )
                     }
                     (None, true) => " // optional".to_owned(),
                     (None, false) => String::new(),
@@ -395,7 +458,11 @@ fn field_rows(fields: &[FieldSpec], prefix: &str, doc: &mut String) -> Result<()
         let (kind, default) = match &field.shape {
             Shape::Leaf { kind, default } => {
                 let default = match (default, field.optional) {
-                    (Some(default), _) => escape_cell(&default_text(default, "`")?),
+                    (Some(default), _) => escape_cell(&default_text(
+                        default,
+                        field.default_display.as_deref(),
+                        "`",
+                    )?),
                     (None, true) => "optional".to_owned(),
                     (None, false) => "required".to_owned(),
                 };
@@ -422,9 +489,12 @@ fn field_rows(fields: &[FieldSpec], prefix: &str, doc: &mut String) -> Result<()
 }
 
 /// `quote` wraps each value, e.g. in backticks for Markdown table cells.
-fn default_text(default: &Default, quote: &str) -> Result<String> {
+fn default_text(default: &Default, display: Option<&str>, quote: &str) -> Result<String> {
     Ok(match default {
-        Default::Value(value) => format!("{quote}{}{quote}", value.pretty()?),
+        Default::Value(value) => match display {
+            Some(display) => format!("{quote}{display}{quote}"),
+            None => format!("{quote}{}{quote}", value.pretty()?),
+        },
         Default::ByIndex(values) => {
             let values = values
                 .iter()
