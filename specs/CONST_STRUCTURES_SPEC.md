@@ -51,28 +51,110 @@ one place.
   test (or a `build.rs` that renders it), not by hand.
 - Device Envoy's `*_generated` doc modules become real macro invocations.
 
+## Decisions (2026-10-04)
+
+From the [Device Envoy survey](DE_MACRO_SURVEY.md):
+
+1. Shared group fields go inside the group's braces, next to its members.
+2. Members are written `Name { ... }`, exactly like a top-level declaration.
+3. Every declaration and member accepts any field order, an optional
+   trailing comma, `#[attrs]`, and visibility.
+4. No field aliases. One spelling per field.
+5. `servo!` becomes a named declaration on both rp and esp.
+6. The framework is indifferent to whether different macros agree with each
+   other. It enforces syntax; each schema owns its field meanings and
+   defaults. Making Device Envoy's macros agree semantically (e.g.
+   `max_frames` vs `max_steps`) is Device Envoy's own, separate decision.
+7. Out of scope: positional expression macros (`tone!`, `combine!`, `tga!`,
+   `pio_split!`) and `init_and_start!`. They stay `macro_rules!`.
+8. Field syntax is `name: value`.
+
+## Target grammar
+
+```ebnf
+Invocation  = Declaration ;
+Declaration = { ATTR } VIS NAME Body ;
+Body        = "{" [ Item { "," Item } [ "," ] ] "}" ;
+Item        = Field | Declaration ;
+Field       = IDENT ":" Value ;
+Value       = Body | KindValue ;
+```
+
+- `Field` vs member `Declaration` is decided with two tokens of lookahead:
+  `IDENT ":"` is a field; `#`, a visibility keyword, or `IDENT "{"` starts a
+  member.
+- A value starting with `{` is a nested field list (e.g. `led2d: { ... }`).
+  A Rust block expression as a value must be parenthesized.
+- `KindValue` is parsed according to the field's kind in the schema
+  (`Expr`, `Type`, `Ident`, or one of a fixed set of idents). Values are not
+  split at top-level commas first, because commas also appear inside
+  `Foo<A, B>` and `f::<A, B>()`, where `<>` are not token groups.
+- Whether a declaration may have members, which kinds, and how many is
+  schema data.
+
+## Examples (Device Envoy, regularized)
+
+```rust,ignore
+led_strips! {
+    pub LedStrips0 {
+        pio: PIO0,
+        Gpio0LedStrip { pin: PIN_0, len: 8, max_current: Current::Milliamps(25) },
+        pub Gpio4Led2d {
+            pin: PIN_4,
+            len: 96,
+            max_current: Current::Milliamps(250),
+            led2d: { led_layout: LED_LAYOUT_12X8_ROTATED, font: Led2dFont::Font4x6Trim },
+        },
+    }
+}
+
+ir_mappings! {
+    pub Remotes {
+        pio: PIO1,
+        button: RemoteButton,
+        capacity: 8,
+        LeftRemote { pin: PIN_15 },
+    }
+}
+
+i2cs! {
+    pub Lcds {
+        i2c: I2C0,
+        sda_pin: PIN_4,
+        scl_pin: PIN_5,
+        pub Top { width: 16, height: 2, address: 0x27 },
+    }
+}
+
+servo! { pub Pan { pin: PIN_0, slice: PWM_SLICE0, channel: A } }
+```
+
 ## Pipeline
 
 ```text
 TokenStream
-  -> generic parser (visibility, name, optional type, value tree)
-  -> value tree: Expr | Struct(named fields) | List | Map
-  -> schema validation (required, defaults, unknown/duplicate, nesting)
-  -> normalized IR
-  -> code generation (ordinary Rust const/static items)
+  -> generic parser: attrs, visibility, name, items (fields + members),
+     with each value parsed by the kind its schema declares
+  -> schema validation: unknown, duplicate, missing, member count,
+     cross-field constraints; defaults inserted
+  -> normalized spec: typed per macro, no token-order or spelling quirks
+  -> code generation hook (per macro): ordinary Rust items + rustdoc
 ```
 
-After parsing, nothing downstream cares about token order or spelling quirks.
+Most Device Envoy macros generate structs, statics, Embassy tasks, and
+methods, not only constant data, so code generation is a per-macro hook that
+receives a validated spec. The framework owns everything before that hook.
 
 ## Open questions
 
 - Where the schema lives: inferred from an ordinary Rust struct with
-  attributes (preferred starting point), a separate schema DSL, or both.
-- Field syntax: `name: value` vs `name = value`.
+  attributes, a separate schema DSL, or plain data in the proc-macro crate.
+  Device Envoy's generated code depends on chip HAL types the schema crate
+  cannot see, which favors schemas as data in each proc-macro crate.
 - How a schema defined in one crate is visible to a macro invocation in
   another (proc macros cannot see other items' definitions directly).
-- Whether some Device Envoy macros generate tasks/resources, not just data,
-  and how codegen hooks express that without becoming a second language.
+- How per-member defaults that depend on member index (rp `led_strips!`
+  DMA auto-numbering) are expressed as schema data rather than code.
 
 ## Project layout and practice
 
@@ -109,5 +191,4 @@ Files containing `macro_rules!` at the start of the experiment:
   `ir/mapping`, `lcd_text`, `led`, `led2d`, `led_strip`, `pio_irqs`, `servo`,
   `servo_player`, `wifi_auto/stack`
 
-First step: inventory every macro's grammar (fields, defaults, repetition,
-what it generates) into a table, and flag inconsistencies to regularize.
+Inventory, grammars, and inconsistencies: [DE_MACRO_SURVEY.md](DE_MACRO_SURVEY.md).
