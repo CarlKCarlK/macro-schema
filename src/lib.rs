@@ -29,4 +29,6 @@
 //!
 //! See `specs/CONST_STRUCTURES_SPEC.md` for the design.
 
+#![no_std]
+
 pub use const_structures_derive::{define, expand};
