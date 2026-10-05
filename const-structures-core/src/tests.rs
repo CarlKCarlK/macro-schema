@@ -110,6 +110,7 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
         | `pin` | ident | required |  |\n";
     let expected = quote! {
         #[cfg(not(feature = "host"))]
+        #[doc = #doc]
         #[doc(hidden)]
         #[macro_export]
         macro_rules! __const_structures_led {
@@ -125,7 +126,6 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
 
         /// An LED strip.
         #[cfg(not(feature = "host"))]
-        #[doc = #doc]
         #[doc(inline)]
         pub use __const_structures_led as led;
     };

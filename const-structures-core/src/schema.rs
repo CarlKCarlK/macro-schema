@@ -405,8 +405,13 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
     let wrapper = format_ident!("__const_structures_{}", name);
     let generator = &schema.generator;
     let shared_attrs = attrs.iter().filter(|attr| !attr.path().is_ident("doc"));
+    // The generated syntax and field tables go on the wrapper, the hand-written docs on
+    // the alias. Rustdoc shows a re-export's own docs followed by the original item's
+    // docs, so this crate's page gets both, and another crate that re-exports the macro
+    // with its own docs keeps the generated tables.
     Ok(quote! {
         #(#shared_attrs)*
+        #[doc = #doc]
         #[doc(hidden)]
         #[macro_export]
         macro_rules! #wrapper {
@@ -421,7 +426,6 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
         }
 
         #(#attrs)*
-        #[doc = #doc]
         #[doc(inline)]
         #vis use #wrapper as #name;
     })
