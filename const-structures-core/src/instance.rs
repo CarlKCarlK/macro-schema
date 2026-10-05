@@ -128,11 +128,14 @@ impl Declaration {
     }
 }
 
-/// A member starts with an attribute, a visibility, or `Name {`.
+/// A member is `{ATTR} VIS Name {`; a field is `name:`. Parsing ahead (rather than
+/// peeking for `pub`) also handles a visibility forwarded as a `macro_rules!` `$vis`.
 fn is_member_start(input: ParseStream) -> bool {
-    input.peek(Token![#])
-        || input.peek(Token![pub])
-        || (input.peek(Ident) && input.peek2(token::Brace))
+    if input.peek(Token![#]) {
+        return true;
+    }
+    let fork = input.fork();
+    fork.parse::<Visibility>().is_ok() && fork.parse::<Ident>().is_ok() && fork.peek(token::Brace)
 }
 
 fn parse_field(input: ParseStream, body: &BodySpec) -> Result<(Ident, Given)> {

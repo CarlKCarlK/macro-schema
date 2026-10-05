@@ -31,8 +31,21 @@ demo::strips! {
     }
 }
 
+macro_rules! forward_vis {
+    ($vis:vis $group:ident, $member:ident) => {
+        demo::strips! {
+            $vis $group {
+                $vis $member { pin: P5 },
+            }
+        }
+    };
+}
+
+forward_vis!(pub(crate) Forwarded, ForwardedMember);
+
 #[test]
 fn members() {
+    assert_eq!(ForwardedMember::PIN, "P5");
     assert_eq!(Strips::BUS, "BUS1");
     assert_eq!(Strips::MEMBER_COUNT, 2);
     assert_eq!((First::INDEX, First::PIN, First::DMA, First::PANEL), (0, "P0", "DMA0", None));
