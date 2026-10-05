@@ -96,6 +96,11 @@ impl Declaration {
         let attrs = input.call(Attribute::parse_outer)?;
         let vis = input.parse()?;
         let name: Ident = input.parse()?;
+        if input.peek(Token![:]) && input.peek2(token::Brace) {
+            return Err(input.error(format!(
+                "remove the `:` after `{name}`; declarations are written `{name} {{ ... }}`"
+            )));
+        }
         let content;
         braced!(content in input);
         let mut fields = Vec::new();
@@ -139,6 +144,18 @@ fn is_member_start(input: ParseStream) -> bool {
 
 fn parse_field(input: ParseStream, body: &BodySpec) -> Result<(Ident, Given)> {
     let field_name: Ident = input.parse()?;
+    if body.field(&field_name).is_none()
+        && body.members.is_some()
+        && input.peek(Token![:])
+        && input.peek2(token::Brace)
+    {
+        return Err(Error::new(
+            field_name.span(),
+            format!(
+                "remove the `:` after `{field_name}`; declarations are written `{field_name} {{ ... }}`"
+            ),
+        ));
+    }
     let spec = body.field(&field_name).ok_or_else(|| {
         let members_hint = if body.members.is_some() {
             " (or a member `Name { ... }`)"

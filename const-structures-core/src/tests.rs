@@ -346,3 +346,12 @@ fn schema_rejects_default_display_without_default() {
         Some("`default_display` needs a single default value (`= ...`)")
     );
 }
+
+#[test]
+fn expand_explains_colon_after_declaration_name() {
+    let input = quote! { Strips { First: { pin: P0 } } };
+    assert_eq!(
+        error_message(expand(STRIPS_SCHEMA, "strips", input)).as_deref(),
+        Some("remove the `:` after `First`; declarations are written `First { ... }`")
+    );
+}
