@@ -7,7 +7,16 @@ extern crate self as demo;
 pub mod button {
     //! Button support.
 
-    pub use demo_macros::button_watch;
+    /// Watches a button in a background task.
+    ///
+    /// ```rust,no_run
+    /// demo::button::button_watch! {
+    ///     pub DocButton { pin: PIN_13 }
+    /// }
+    /// assert_eq!(DocButton::DEBOUNCE_MS, 20);
+    /// ```
+    #[doc(inline)]
+    pub use demo_macros::demo_button_watch as button_watch;
 
     pub mod button_watch_generated {
         //! Example of what [`button_watch!`](super::button_watch) generates.

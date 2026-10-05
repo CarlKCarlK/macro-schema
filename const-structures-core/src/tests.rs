@@ -118,3 +118,28 @@ fn define_documents_fields() -> Result<()> {
     assert_eq!(pretty(expected)?, pretty(define(input)?)?);
     Ok(())
 }
+
+#[test]
+fn define_as_names_the_macro_separately_from_the_function() -> Result<()> {
+    let schema = quote! { ::demo::__led_generate { pin: ident } };
+    let input = quote! { pub rp_led as led => #schema };
+    let schema_source = schema.to_string();
+    let doc = "\n\n**Syntax:**\n\n```text\n\
+        led! {\n    [<attributes>] [<visibility>] <Name> {\n\
+        \x20       pin: <ident>,\n\
+        \x20   }\n}\n```\n\n**Fields:**\n\n\
+        | Field | Kind | Default | Description |\n\
+        | ----- | ---- | ------- | ----------- |\n\
+        | `pin` | ident | required |  |\n";
+    let expected = quote! {
+        #[doc = #doc]
+        #[proc_macro]
+        pub fn rp_led(input: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
+            ::const_structures::__core::expand(#schema_source, "led", input.into())
+                .unwrap_or_else(|error| error.into_compile_error())
+                .into()
+        }
+    };
+    assert_eq!(pretty(expected)?, pretty(define(input)?)?);
+    Ok(())
+}

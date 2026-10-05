@@ -9,10 +9,15 @@ use syn::{
 
 use crate::value::{Kind, Value};
 
-/// `define!` input: `{ATTR} [pub] NAME => SCHEMA`.
+/// `define!` input: `{ATTR} [pub] NAME [as MACRO_NAME] => SCHEMA`.
+///
+/// `NAME` is the generated proc-macro function. `MACRO_NAME` (default `NAME`)
+/// is the name users see after the library re-exports it with
+/// `pub use ...::NAME as MACRO_NAME;`; docs and messages use it.
 pub struct Definition {
     pub attrs: Vec<Attribute>,
     pub name: Ident,
+    pub macro_name: Ident,
     /// Source text of the schema, re-parsed by the generated proc macro on each use.
     pub schema_source: String,
     pub schema: Schema,
@@ -24,13 +29,20 @@ impl Parse for Definition {
         if input.peek(Token![pub]) {
             input.parse::<Token![pub]>()?;
         }
-        let name = input.parse()?;
+        let name: Ident = input.parse()?;
+        let macro_name = if input.peek(Token![as]) {
+            input.parse::<Token![as]>()?;
+            input.parse()?
+        } else {
+            name.clone()
+        };
         input.parse::<Token![=>]>()?;
         let schema_tokens: TokenStream = input.parse()?;
         let schema = syn::parse2(schema_tokens.clone())?;
         Ok(Self {
             attrs,
             name,
+            macro_name,
             schema_source: schema_tokens.to_string(),
             schema,
         })
@@ -141,11 +153,12 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
     let Definition {
         attrs,
         name,
+        macro_name,
         schema_source,
         schema,
     } = syn::parse2(input)?;
-    let doc = macro_doc(&name, &schema)?;
-    let macro_name = name.to_string();
+    let doc = macro_doc(&macro_name, &schema)?;
+    let macro_name = macro_name.to_string();
     Ok(quote! {
         #(#attrs)*
         #[doc = #doc]
@@ -159,9 +172,9 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
 }
 
 /// Syntax block and field table appended to the macro's hand-written docs.
-fn macro_doc(name: &Ident, schema: &Schema) -> Result<String> {
+fn macro_doc(macro_name: &Ident, schema: &Schema) -> Result<String> {
     let mut doc = String::from("\n\n**Syntax:**\n\n```text\n");
-    doc.push_str(&format!("{name}! {{\n"));
+    doc.push_str(&format!("{macro_name}! {{\n"));
     doc.push_str("    [<attributes>] [<visibility>] <Name> {\n");
     for field in &schema.fields {
         let default = match &field.default {
