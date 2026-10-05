@@ -57,7 +57,21 @@ After parsing, nothing downstream cares about token order or spelling quirks.
   another (proc macros cannot see other items' definitions directly).
 - Whether some Device Envoy macros generate tasks/resources, not just data,
   and how codegen hooks express that without becoming a second language.
-- Whether `syn` 3 (now available) should replace `syn` 2 before real work.
+
+## Project layout and practice
+
+Follows "Nine Rules for Creating Procedural Macros in Rust" (Kadie), with
+dependencies updated:
+
+- `const-structures`: facade crate; re-exports the macro; integration tests and
+  `trybuild` UI tests in `tests/`.
+- `const-structures-derive`: thin `proc-macro = true` shim.
+- `const-structures-core`: all logic on `proc_macro2`; unit tests compare
+  `prettyplease` output with `pretty_assertions` diffs, debuggable normally.
+- `syn` 3. Errors are `syn::Error` returned through `?` and merged with
+  `Error::combine`, emitted once via `into_compile_error()` in the shim. This
+  replaces the article's `proc-macro-error` (unmaintained; its successor
+  `proc-macro-error2` still pins `syn` 2) and avoids panic-based `abort!`.
 
 ## Rollback plan
 

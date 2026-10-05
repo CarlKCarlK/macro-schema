@@ -1,0 +1,13 @@
+[package]
+name = "const-structures-derive"
+description = "Proc-macro entry points for const-structures; logic lives in const-structures-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+const-structures-core.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "const-structures-core"
+description = "proc_macro2-based implementation of const-structures, debuggable with ordinary tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[dev-dependencies]
+prettyplease.workspace = true
+pretty_assertions.workspace = true

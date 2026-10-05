@@ -1,0 +1,5 @@
+error: duplicate field `pin`
+ --> tests/ui/duplicate_field.rs:8:31
+  |
+8 |     BUTTON: Button { pin: 13, pin: 14 }
+  |                               ^^^

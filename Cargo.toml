@@ -1,18 +1,32 @@
-[package]
-name = "const-structures"
+[workspace]
+members = [".", "const-structures-derive", "const-structures-core"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
-description = "Named-field, schema-checked declarations of compile-time constant structures."
 license = "MIT OR Apache-2.0"
 
-[lib]
-proc-macro = true
-
-[dependencies]
+[workspace.dependencies]
+const-structures-core = { version = "0.1.0", path = "const-structures-core" }
+const-structures-derive = { version = "0.1.0", path = "const-structures-derive" }
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
-syn = { version = "2", features = ["full", "extra-traits"] }
+syn = { version = "3.0.6", features = ["full", "extra-traits"] }
+prettyplease = "0.3.0"
+pretty_assertions = "1.4.1"
+trybuild = "1.0.121"
+
+[package]
+name = "const-structures"
+description = "Named-field, schema-checked declarations of compile-time constant structures."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+const-structures-derive.workspace = true
 
 [dev-dependencies]
-trybuild = "1.0.121"
+trybuild.workspace = true
