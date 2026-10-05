@@ -35,6 +35,22 @@ regularization.
 8. If a Device Envoy macro cannot fit cleanly, change Device Envoy's syntax
    rather than add a special case.
 
+## Documentation comes from the schema
+
+Each field is described once (name, kind, required/default, doc string). From
+that one description come parsing, default insertion, error messages,
+generated code, and rustdoc. Success test: no field is described in more than
+one place.
+
+- Generated items get `#[doc]` listing the configuration actually used,
+  marking defaulted fields, with values formatted via `prettyplease` (raw
+  `TokenStream::to_string()` spacing is unreadable).
+- Generated docs use ```` ```text ```` fences, never ```` ```rust ````: they
+  land in the user's crate and would run as its doctests.
+- The macro's own doc page is static, so keep its field table in sync with a
+  test (or a `build.rs` that renders it), not by hand.
+- Device Envoy's `*_generated` doc modules become real macro invocations.
+
 ## Pipeline
 
 ```text
