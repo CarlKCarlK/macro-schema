@@ -556,15 +556,20 @@ fn fields_tokens(fields: &[Resolved]) -> TokenStream {
     quote!(#(#names: #values,)*)
 }
 
-/// The declaration's own values, as a template reads them. Unlike the generator form,
-/// an inherited visibility renders as nothing.
+/// The declaration's own values, as a template reads them. As in the generator form, an
+/// inherited visibility renders as `pub(self)`, which means the same and still matches
+/// `$vis:vis` in any `macro_rules!` helper the template calls.
 fn header_data(declaration: &Declaration, doc: &str) -> Vec<(String, Data)> {
     let Declaration {
         attrs, vis, name, ..
     } = declaration;
+    let vis = match vis {
+        Visibility::Inherited => quote!(pub(self)),
+        vis => vis.to_token_stream(),
+    };
     vec![
         ("name".to_owned(), Data::Leaf(name.to_token_stream())),
-        ("vis".to_owned(), Data::Leaf(vis.to_token_stream())),
+        ("vis".to_owned(), Data::Leaf(vis)),
         ("doc".to_owned(), Data::Leaf(quote!(#doc))),
         ("attrs".to_owned(), Data::Leaf(quote!(#(#attrs)*))),
     ]

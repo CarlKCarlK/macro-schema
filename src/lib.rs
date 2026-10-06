@@ -6,7 +6,7 @@
 //! description come parsing, validation, defaulting, error messages, and rustdoc.
 //! The template is ordinary Rust tokens plus four constructs:
 //!
-//! - `$name`, `$vis`, `$doc`, `$attrs`, and each top-level field (`$enabled`)
+//! - `$name`, `$vis` (`pub(self)` when none was written), `$doc`, `$attrs`, and each top-level field (`$enabled`)
 //!   substitute the declaration's values; a nested field is `$range.min`.
 //! - `$for member in $members { ... }` repeats per member; inside, use
 //!   `$member.name`, `$member.vis`, `$member.doc`, `$member.attrs`,
