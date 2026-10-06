@@ -559,3 +559,25 @@ fn snake_case_splits_words_digits_and_acronyms() {
         assert_eq!(to_snake_case(input), expected);
     }
 }
+
+#[test]
+fn written_doc_replaces_generated_instance_doc() -> Result<()> {
+    let template = quote! {
+        $attrs #[doc = $doc] $vis struct $name;
+        $for strip in $members { $strip.attrs #[doc = $strip.doc] struct $strip.name; }
+    };
+    let input = quote! {
+        /// Hand-written.
+        #[doc(hidden)]
+        pub Strips {
+            #[doc = "Outer macro's doc."]
+            First { pin: P0 },
+        }
+    };
+    let expected = quote! {
+        #[doc = r" Hand-written."] #[doc(hidden)] #[doc = ""] pub struct Strips;
+        #[doc = "Outer macro's doc."] #[doc = ""] struct First;
+    };
+    assert_eq!(expected.to_string(), render(template, input)?.to_string());
+    Ok(())
+}
