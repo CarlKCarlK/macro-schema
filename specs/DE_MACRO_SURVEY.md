@@ -120,12 +120,12 @@ Items 1–10 were syntax, 11–17 semantics, and 18–24 implementation.
 | 9 | `tone!`, `tga!`, `pio_split!`, `init_and_start!` positional | `pio_split!` removed (unused). The others remain; they are not declarations |
 | 10 | `init_and_start!` fields name generated `let` bindings | Unchanged |
 | 11 | `max_current` required in `led_strips!` members, defaulted elsewhere | Intentional: one device defaults to 250 mA; a group of several must budget each member, because currents on a shared supply add up. The field docs now say so, and that separately declared devices each get the default |
-| 12 | `dma` defaulted on RP `audio_player!`, required on ESP | Unchanged |
+| 12 | `dma` defaulted on RP `audio_player!`, required on ESP | Intentional: no one default fits every ESP chip. The ESP32 and ESP32-S2 use `DMA_I2S0`, the newer chips `DMA_CH0`, and the value names a peripheral type |
 | 13 | `pio` defaults to `PIO0` except RP IR, where it is required | Fixed: RP IR macros default to `PIO0` too. A PIO clash still fails to compile (ownership of the PIO peripheral), and every RP `pio` field doc now says what to do about it |
 | 14 | Animation length named `max_frames` (LED strips) or `max_steps` (`led!`, `servo_player!`) | Names unchanged. All LED strip and panel schemas share `MAX_FRAMES_DEFAULT` (16) |
 | 15 | ESP `led2d!` requires `len` although `led_layout` implies it | Fixed: `len` removed; the LED count comes from `led_layout`, as on RP |
 | 16 | ESP `led2d!` defaulted `engine` to RMT, while `led_strip!` chose by chip | Both choose by chip: RMT where available, otherwise SPI, through the shared capability check |
-| 17 | `pcm_clip!` requires a source rate; `adpcm_clip!` reads it from the WAV header | Unchanged: a raw PCM file has no header |
+| 17 | `pcm_clip!` requires a source rate; `adpcm_clip!` reads it from the WAV header | Intentional: a raw PCM file has no header to read it from |
 | 18 | Shared field validator in only four macros | Removed; the framework validates every macro |
 | 19 | Defaults filled by tt-muncher arms (`led_strips!` about 1,700 lines) | Defaults are schema data |
 | 20 | `init_and_start!` enumerates each permutation of its options and calls `.expect(...)` | Unchanged; out of scope |
@@ -134,9 +134,9 @@ Items 1–10 were syntax, 11–17 semantics, and 18–24 implementation.
 | 23 | Resource exclusivity enforced three ways | Still varied: ESP servo link-time claim symbols, LCD unique-address const assert, and now a compile error for two RP LED groups on one PIO in one module. Other peripherals rely on HAL ownership |
 | 24 | Generated item names derived with `paste!` | Derived with `$ident` / `$snake` / `$upper` in templates; still not visible in the invocation |
 
-The items marked "Unchanged" in 12–17 are open questions about Device Envoy's
-APIs, not framework limitations. Each schema owns its own field meanings and
-defaults.
+Items 11–17 were API questions for Device Envoy, not framework limitations.
+Each was either fixed or kept deliberately, for the reason given. Each schema
+owns its own field meanings and defaults.
 
 ## Bugs found during the migration
 
