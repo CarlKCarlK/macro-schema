@@ -119,7 +119,7 @@ Items 1–10 were syntax, 11–17 semantics, and 18–24 implementation.
 | 8 | Aliases `sample_rate_hz` / `source_sample_rate_hz`, `odd` / `even` / `channel` | One spelling: `source_sample_rate_hz`. The RP servo channel fields went away with item 7 |
 | 9 | `tone!`, `tga!`, `pio_split!`, `init_and_start!` positional | `pio_split!` removed (unused). The others remain; they are not declarations |
 | 10 | `init_and_start!` fields name generated `let` bindings | Unchanged |
-| 11 | `max_current` required in `led_strips!` members, defaulted elsewhere | Unchanged |
+| 11 | `max_current` required in `led_strips!` members, defaulted elsewhere | Intentional: one device defaults to 250 mA; a group of several must budget each member, because currents on a shared supply add up. The field docs now say so, and that separately declared devices each get the default |
 | 12 | `dma` defaulted on RP `audio_player!`, required on ESP | Unchanged |
 | 13 | `pio` defaults to `PIO0` except RP IR, where it is required | Unchanged |
 | 14 | Animation length named `max_frames` (LED strips) or `max_steps` (`led!`, `servo_player!`) | Names unchanged. All LED strip and panel schemas share `MAX_FRAMES_DEFAULT` (16) |
@@ -134,7 +134,7 @@ Items 1–10 were syntax, 11–17 semantics, and 18–24 implementation.
 | 23 | Resource exclusivity enforced three ways | Still varied: ESP servo link-time claim symbols, LCD unique-address const assert, and now a compile error for two RP LED groups on one PIO in one module. Other peripherals rely on HAL ownership |
 | 24 | Generated item names derived with `paste!` | Derived with `$ident` / `$snake` / `$upper` in templates; still not visible in the invocation |
 
-The items marked "Unchanged" in 11–17 are open questions about Device Envoy's
+The items marked "Unchanged" in 12–17 are open questions about Device Envoy's
 APIs, not framework limitations. Each schema owns its own field meanings and
 defaults.
 
