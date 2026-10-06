@@ -1,4 +1,14 @@
-use alias_regression::{calls, via_macro, widgets::same_module};
+#![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]
+#![deny(warnings)]
+
+use std::error::Error;
+
+use alias_regression::{calls, via_macro, widget, widgets::same_module};
+
+pub use alias_regression::widgets::widget as exported_widget;
+
+widget! { pub DownstreamImported {} }
+exported_widget! { pub FurtherExport { size: 9 } }
 
 #[test]
 fn every_same_crate_path_expands() {
@@ -16,10 +26,36 @@ alias_regression::reexported::widget! { pub DownstreamModule { size: 7 } }
 fn downstream_paths_expand() {
     assert_eq!(DownstreamRoot::SIZE, 6);
     assert_eq!(DownstreamModule::SIZE, 7);
+    assert_eq!(DownstreamImported::SIZE, 1);
+    assert_eq!(FurtherExport::SIZE, 9);
 }
 
 #[test]
 fn ui() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/*.rs");
+}
+
+#[test]
+fn rustdoc_keeps_public_alias_in_its_module() -> Result<(), Box<dyn Error>> {
+    use std::{fs, path::Path, process::Command};
+
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let target = manifest.join("../../target/alias-rustdoc");
+    let status = Command::new(env!("CARGO"))
+        .args(["doc", "--offline", "--no-deps", "-p", "alias-regression"])
+        .arg("--manifest-path")
+        .arg(manifest.join("Cargo.toml"))
+        .arg("--target-dir")
+        .arg(&target)
+        .env("RUSTDOCFLAGS", "-D warnings")
+        .status()?;
+    assert!(status.success(), "alias fixture rustdoc failed");
+    let docs = target.join("doc/alias_regression");
+    let macro_page = fs::read_to_string(docs.join("widgets/macro.widget.html"))?;
+    assert!(macro_page.contains("Declares a widget."));
+    assert!(macro_page.contains("Fields:"));
+    assert!(macro_page.contains("Widget size."));
+    assert!(!docs.join("macro.__const_structures_widget.html").exists());
+    Ok(())
 }

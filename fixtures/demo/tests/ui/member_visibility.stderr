@@ -1,0 +1,5 @@
+error: members take their group's visibility; remove this visibility
+ --> tests/ui/member_visibility.rs:3:9
+  |
+3 |         pub Member { pin: PIN_0 },
+  |         ^^^

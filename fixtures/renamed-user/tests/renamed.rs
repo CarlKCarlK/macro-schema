@@ -1,3 +1,6 @@
+#![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]
+#![deny(warnings)]
+
 #[test]
 fn renamed_dependency_resolves_generator_and_defaults() {
     assert_eq!(renamed_user::Imported::DEBOUNCE_MS, 20);
