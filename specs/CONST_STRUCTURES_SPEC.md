@@ -276,12 +276,42 @@ A path consumes `.field` only while the current value has fields. Once it
 reaches a leaf, a following `.` is ordinary Rust. So
 `$panel.led_layout.width()` substitutes `led_layout` and keeps `.width()`.
 
-### Values render their tokens as written
+### Expressions keep their precedence
 
-A leaf renders the caller's tokens (or the default's tokens) unchanged.
-Nothing is added around them, so an `expr` like `a + b` substituted into
-`$decl.x * 2` gives `a + b * 2`. Parenthesize in the template when precedence
-matters.
+A leaf renders the caller's tokens (or the default's tokens). An `expr` value
+that is a compound expression is wrapped in parentheses, so it stays one
+operand wherever the template puts it:
+
+| Value of `x` | `$decl.x * 2` renders | `$decl.x.pow(2)` renders |
+| --- | --- | --- |
+| `1 + 2` | `(1 + 2) * 2` | `(1 + 2).pow(2)` |
+| `-4` | `(-4) * 2` | `(-4).pow(2)` |
+| `7` | `7 * 2` | `7.pow(2)` |
+| `LIMIT` | `LIMIT * 2` | `LIMIT.pow(2)` |
+
+Self-delimiting expressions stay bare: literals, paths, parenthesized and
+tuple expressions, arrays, struct literals, macro calls, blocks, and calls,
+method calls, field accesses, indexing, `?`, and `.await` on any of these. They
+are already one operand, and staying bare keeps them valid where Rust requires
+that exact form, such as `concat!($decl.label)`, `include_bytes!($decl.file)`,
+or a literal as a bare const generic argument (`Holder::<$decl.len>`).
+Everything else is parenthesized, including unary, binary, cast, range, and
+closure expressions. `ident` and `ty` values are never wrapped.
+
+Why parentheses: `macro_rules!` keeps an `$x:expr` capture's precedence by
+wrapping it in an invisible group, which the parser honors. rustc flattens
+invisible groups that a proc macro emits, so they don't protect anything here.
+The `fixtures/demo` test `expression_values_keep_their_precedence` checks this
+against rustc: without the parentheses, `x: 1 + 2` gave `$decl.x * 2 == 5`.
+
+Two consequences follow:
+
+- `stringify!($decl.x)` shows the parentheses for a compound value (`"(1 + 2)"`).
+- A compound expression used as a const generic argument still needs braces in
+  the template (`Holder::<{ $decl.n }>`), exactly as with `macro_rules!`.
+
+The escape hatch is unaffected: a generator matches `$x:expr`, which gives it
+the usual `macro_rules!` grouping.
 
 ### `$for`
 

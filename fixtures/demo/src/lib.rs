@@ -202,3 +202,57 @@ pub mod records {
         }
     }
 }
+
+/// Expression values keep their own precedence when a template substitutes them, and
+/// still work where Rust wants a literal-like expression.
+pub mod precedence {
+    /// Holds a const generic, to substitute an expression as a generic argument.
+    pub struct Holder<const N: usize>;
+
+    impl<const N: usize> Holder<N> {
+        pub const N: usize = N;
+    }
+
+    macro_rules! forward_expr {
+        ($value:expr) => {
+            $value
+        };
+    }
+    pub(crate) use forward_expr;
+
+    const_structures::define! {
+        /// Substitutes expression fields into operator, array, generic, and macro positions.
+        pub scaled {
+            /// An integer expression.
+            x: expr,
+            /// An optional integer expression.
+            y?: expr,
+            /// A length; an operator expression, so a generic argument needs braces.
+            n: expr = 2 + 1,
+            /// A literal length, usable as a bare generic argument.
+            len: expr = 4,
+            /// A string literal.
+            label: expr = "scaled",
+        }
+
+        generate {
+            $decl.vis struct $decl.name;
+
+            impl $decl.name {
+                pub const DOUBLED: i32 = $decl.x * 2;
+                pub const NEGATED: i32 = -$decl.x;
+                pub const Y_DOUBLED: i32 = $if let Some(y) = $decl.y { $y * 2 } else { 0 };
+                pub const FORWARDED: i32 = $crate::precedence::forward_expr!($decl.x) * 2;
+                pub const ZEROS: [u8; $decl.n] = [0; $decl.n];
+                pub const GENERIC: usize = $crate::precedence::Holder::<$decl.len>::N;
+                pub const BRACED: usize = $crate::precedence::Holder::<{ $decl.n }>::N;
+                pub const LABEL: &'static str = concat!($decl.label, "!");
+                pub const TEXT: &'static str = stringify!($decl.x);
+                pub const SQUARED: i32 = $decl.x.pow(2);
+            }
+        }
+    }
+
+    scaled! { pub Sum { x: 1_i32 + 2, y: 4 - 1 } }
+    scaled! { pub Negative { x: -4_i32 } }
+}

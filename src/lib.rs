@@ -20,6 +20,10 @@
 //!   `SCREAMING_SNAKE_CASE`. Parts are identifiers, integers, `ident` fields,
 //!   `$decl.name`, `$member.name`, or `$member.index`.
 //!
+//! A compound `expr` value is substituted in parentheses, so it keeps its precedence:
+//! with `x: 1 + 2`, `$decl.x * 2` is `(1 + 2) * 2`. Literals, paths, calls, and other
+//! self-delimiting expressions are substituted bare.
+//!
 //! Everything belonging to the declaration is reached through `$decl`; everything
 //! belonging to a loop or `$if let` variable, through that variable. `$crate` refers
 //! to the defining library. Templates are type-checked against the schema when

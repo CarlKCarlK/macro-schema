@@ -1,7 +1,7 @@
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::{Delimiter, Group, Literal, TokenStream, TokenTree};
 use quote::{ToTokens, quote};
 use syn::{
-    Attribute, Error, Ident, LitStr, Result, Token, Visibility, braced,
+    Attribute, Error, Expr, Ident, LitStr, Result, Token, Visibility, braced,
     parse::{Parse, ParseStream, Parser},
     token,
 };
@@ -455,7 +455,7 @@ fn resolve_field(
     let (tokens, value, display, is_default) = match (given, &spec.shape) {
         (Some(Given::Leaf(value)), _) => (
             wrap(quote!(#value)),
-            ResolvedValue::Leaf(quote!(#value)),
+            ResolvedValue::Leaf(template_tokens(value)),
             value.pretty()?,
             false,
         ),
@@ -495,7 +495,7 @@ fn resolve_field(
             };
             (
                 quote!(#value),
-                ResolvedValue::Leaf(quote!(#value)),
+                ResolvedValue::Leaf(template_tokens(value)),
                 display,
                 true,
             )
@@ -519,7 +519,7 @@ fn resolve_field(
             };
             (
                 quote!(#value),
-                ResolvedValue::Leaf(quote!(#value)),
+                ResolvedValue::Leaf(template_tokens(value)),
                 value.pretty()?,
                 true,
             )
@@ -539,6 +539,49 @@ fn resolve_field(
         display,
         is_default,
     }))
+}
+
+/// A value as a template substitutes it. A compound expression is parenthesized so
+/// it keeps its own precedence: with `x: 1 + 2`, `$decl.x * 2` renders `(1 + 2) * 2`,
+/// and `$decl.x.pow(2)` renders `(1 + 2).pow(2)`.
+///
+/// `macro_rules!` gets this from the invisible group around an `$x:expr` capture, but
+/// rustc flattens invisible groups that a proc macro emits, so parentheses are the
+/// only reliable boundary. Self-delimiting expressions (literals, paths, calls,
+/// blocks, ...) stay bare, so they still work where Rust wants exactly that form:
+/// `concat!($decl.label)`, `include_bytes!($decl.file)`, `Holder::<$decl.len>`.
+fn template_tokens(value: &Value) -> TokenStream {
+    match value {
+        Value::Expr(expr) if !is_self_delimiting(expr) => {
+            TokenTree::Group(Group::new(Delimiter::Parenthesis, expr.to_token_stream())).into()
+        }
+        _ => value.to_token_stream(),
+    }
+}
+
+/// Whether an expression already reads as one operand in any position: an atom, a
+/// delimited form, or a postfix chain on one.
+fn is_self_delimiting(expr: &Expr) -> bool {
+    match expr {
+        Expr::Lit(_)
+        | Expr::Path(_)
+        | Expr::Paren(_)
+        | Expr::Tuple(_)
+        | Expr::Array(_)
+        | Expr::Repeat(_)
+        | Expr::Struct(_)
+        | Expr::Macro(_)
+        | Expr::Block(_)
+        | Expr::Const(_)
+        | Expr::Unsafe(_) => true,
+        Expr::Call(call) => is_self_delimiting(&call.func),
+        Expr::MethodCall(call) => is_self_delimiting(&call.receiver),
+        Expr::Field(field) => is_self_delimiting(&field.base),
+        Expr::Index(index) => is_self_delimiting(&index.expr),
+        Expr::Try(try_expr) => is_self_delimiting(&try_expr.expr),
+        Expr::Await(await_expr) => is_self_delimiting(&await_expr.base),
+        _ => false,
+    }
 }
 
 fn block_display(fields: &[Resolved]) -> String {

@@ -109,3 +109,22 @@ fn templates_render_nested_and_optional_values() {
     assert_eq!(Defaults::VALUE, None);
     assert_eq!(WithoutLimits::LIMITS, None);
 }
+
+#[test]
+fn expression_values_keep_their_precedence() {
+    use demo::precedence::{Negative, Sum};
+
+    assert_eq!(Sum::DOUBLED, 6);
+    assert_eq!(Sum::NEGATED, -3);
+    assert_eq!(Sum::Y_DOUBLED, 6);
+    assert_eq!(Sum::FORWARDED, 6);
+    assert_eq!(Sum::ZEROS, [0; 3]);
+    assert_eq!(Sum::GENERIC, 4);
+    assert_eq!(Sum::BRACED, 3);
+    assert_eq!(Sum::LABEL, "scaled!");
+    // A compound expression is substituted parenthesized, and `stringify!` shows that.
+    assert_eq!(Sum::TEXT, "(1_i32 + 2)");
+    assert_eq!(Sum::SQUARED, 9);
+    assert_eq!(Negative::SQUARED, 16);
+    assert_eq!(Negative::DOUBLED, -8);
+}

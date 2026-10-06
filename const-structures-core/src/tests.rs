@@ -641,3 +641,40 @@ fn written_doc_replaces_generated_instance_doc() -> Result<()> {
     assert_eq!(expected.to_string(), render(template, input)?.to_string());
     Ok(())
 }
+
+#[test]
+fn compound_expressions_render_parenthesized() -> Result<()> {
+    let body = syn::parse_str::<Schema>("__gen { x: expr }")?.body;
+    let template = embed(quote! { $decl.x });
+    for (value, expected) in [
+        (quote!(1 + 2), quote!((1 + 2))),
+        (quote!(-4), quote!((-4))),
+        (quote!(x as u8), quote!((x as u8))),
+        (quote!(0..4), quote!((0..4))),
+        (quote!(|v| v + 1), quote!((|v| v + 1))),
+        (quote!(7), quote!(7)),
+        (quote!("label"), quote!("label")),
+        (quote!(crate::LIMIT), quote!(crate::LIMIT)),
+        (
+            quote!(Current::Milliamps(250)),
+            quote!(Current::Milliamps(250)),
+        ),
+        (quote!(layout.width()), quote!(layout.width())),
+        (quote!(table[3].field), quote!(table[3].field)),
+        (quote!((1 + 2)), quote!((1 + 2))),
+        (quote!({ 1 + 2 }), quote!({ 1 + 2 })),
+        (quote!([0; 4]), quote!([0; 4])),
+        (quote!(concat!("a", "b")), quote!(concat!("a", "b"))),
+        (quote!((1 + 2).pow(2)), quote!((1 + 2).pow(2))),
+        (quote!(-x.abs()), quote!((-x.abs()))),
+    ] {
+        let rendered = expand_parts(
+            "m",
+            &Output::Template(template.clone()),
+            &body,
+            quote!(A { x: #value }),
+        )?;
+        assert_eq!(rendered.to_string(), expected.to_string(), "for `{value}`");
+    }
+    Ok(())
+}
