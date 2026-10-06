@@ -35,7 +35,7 @@ readme = "README.md"
 keywords = ["const", "configuration", "proc-macro", "schema"]
 categories = ["development-tools::procedural-macro-helpers", "no-std"]
 documentation = "https://docs.rs/const-structures"
-exclude = ["AGENTS.md", "CLAUDE.md", "Cargo.lock", "specs/**", "fixtures/**", "target/**"]
+exclude = ["AGENTS.md", "CLAUDE.md", "Cargo.lock", "specs/**", "fixtures/**", "target/**", "wip/**", "tests/readme.rs"]
 # TODO0 Add the canonical repository URL and homepage before publishing.
 
 [dependencies]

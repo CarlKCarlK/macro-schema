@@ -2,15 +2,22 @@
 
 <!-- TODO0 consider deleting this spec once the work below is implemented and released. (may no longer apply: this is now the authoritative description of the implementation) -->
 
-This document describes `const-structures` as implemented. It is the
-authoritative reference for the schema language, the invocation syntax, the
-`generate { ... }` template language, documentation generation, diagnostics,
-and the macro export architecture. Where this document and the code disagree,
-the code is right and this document has a bug.
+This document is for contributors. It explains how `const-structures` works
+inside and why it is designed the way it is. Where this document and the code
+disagree, the code is right and this document has a bug.
 
-Device Envoy is the first client. Its migration, including its pre-migration
-baseline and the choices specific to it, is recorded in
-[DE_MACRO_SURVEY.md](DE_MACRO_SURVEY.md).
+To *use* the crate, start elsewhere:
+
+| Document | Contents |
+| --- | --- |
+| `README.md` (also the crate's rustdoc front page) | Why the crate exists, a quick start, the template language by example, errors, generated docs |
+| `src/define.md` (the rustdoc of `define!`) | The complete language reference: schema, invocation syntax, every template construct, documentation rules, the error catalog, the escape hatch |
+| The rustdoc of `expand!` (in `src/lib.rs`) | What `expand!` is and the required re-export |
+| `examples/quick_start.rs`, `examples/commands.rs` | Runnable programs; the README quotes the first verbatim |
+| [DE_MACRO_SURVEY.md](DE_MACRO_SURVEY.md) | Device Envoy's migration, the first real client |
+
+This document does not repeat the language reference. It refers to sections of
+`src/define.md` by name.
 
 ## What the framework replaces
 
@@ -38,35 +45,40 @@ The result went further. The generators were replaced too:
 So a library author writes three things in one place: the schema, its docs,
 and a template. The framework supplies everything else.
 
-## Architecture
+## Crates
 
 ```text
-const-structures            facade crate (#![no_std]); re-exports the two proc macros
-const-structures-derive     thin proc-macro shim
-const-structures-core       parsing, validation, normalization, templates, docs (proc_macro2)
-
-<library crate>
-    #[doc(hidden)]
-    pub use const_structures::expand as __const_structures_expand;    // once, at the crate root
-
-    pub mod indicator {
-        const_structures::define! { /// docs
-                                    pub indicators { /* schema */ }
-                                    generate { /* template */ } }
-    }
-
-<user crate>
-    indicators! { pub Status {} }
+const-structures            facade (#![no_std]): re-exports the two proc macros; holds the user docs
+const-structures-derive     proc-macro shim: converts TokenStreams and errors, nothing else
+const-structures-core       the implementation, over proc_macro2, unit-testable
+    schema.rs               define!: parse a definition, generate macro docs, emit the wrapper and alias
+    instance.rs             expand!: parse a call, validate, fill defaults, build instance docs, dispatch
+    template.rs             the template language: parse and type-check, embed, render
+    value.rs                field kinds (ident, expr, ty) and value pretty-printing for docs
+    tests.rs                unit tests, including template rendering and diagnostics
 ```
 
-The facade is `#![no_std]`, so embedded `no_std` libraries can depend on it.
-Each client crate must re-export `expand!` at its crate root under the exact
-name `__const_structures_expand`, because the generated wrappers call
-`$crate::__const_structures_expand!`.
+The facade is `#![no_std]` so that embedded `no_std` libraries can depend on
+it. Everything is implemented in `const-structures-core` as ordinary functions
+from `proc_macro2::TokenStream` to `syn::Result<TokenStream>`, so it can be
+unit tested and debugged without the compiler's macro expander. The derive
+crate turns an `Err` into `compile_error!` with `syn::Error::into_compile_error`.
+
+## Architecture
 
 ### What `define!` emits
 
-For `pub indicators { ... } generate { ... }`, `define!` emits two items:
+For
+
+```text
+const_structures::define! {
+    /// Hand-written docs.
+    pub indicators { /* schema */ }
+    generate { /* template */ }
+}
+```
+
+`define!` emits two items:
 
 ```text
 #[doc = "<generated Syntax block and field tables>"]
@@ -88,17 +100,30 @@ macro_rules! __const_structures_wrapper_indicators {
 pub use __const_structures_wrapper_indicators as indicators;
 ```
 
-- The wrapper has a single catch-all rule. All parsing happens in `expand!`.
-- The schema body is embedded verbatim, so diagnostics from `expand!` point at
-  the schema and at the caller's input with their original spans.
-- The `define!`'s visibility applies to the alias. Its non-doc attributes (for
-  example `#[cfg(...)]`) go on both the wrapper and the alias. Its doc
-  attributes go only on the alias.
-- Inside a `macro_rules!` body, `$name` would be read as a metavariable, so the
-  template's construct sigil `$` is re-marked as `#` when it is embedded.
-  `$crate` is left alone, so `macro_rules!` resolves it to the defining crate.
-- In the escape-hatch form (`pub NAME => PATH { ... }`), `template: { ... }` is
-  replaced by `generator: { $crate::PATH }`.
+- **Why a generated `macro_rules!`.** A proc macro must live in a proc-macro
+  crate. A `macro_rules!` wrapper is an ordinary item, so it can be emitted in
+  the library's own module, beside the API it generates. The wrapper has one
+  catch-all rule: all parsing happens in `expand!`.
+- **How the schema reaches the expander.** The schema body is embedded in the
+  wrapper verbatim, and `expand!` re-parses it on every call. Keeping the
+  original tokens keeps their spans, so errors about the schema point into the
+  library's source.
+- **Why `$` becomes `#`.** Inside a `macro_rules!` body, `$name` would be read
+  as a metavariable. The template's construct sigil is re-marked as `#` when it
+  is embedded (`template::embed`), and `expand!` parses the embedded template
+  with `#` as its sigil (`EMBEDDED_SIGIL`). `$crate` is left alone, so
+  `macro_rules!` resolves it to the defining crate.
+- **Attributes.** The `define!`'s visibility applies to the alias. Its non-doc
+  attributes, such as `#[cfg(...)]`, go on both items. Its doc attributes go
+  only on the alias.
+- **Docs placement.** The generated syntax block and field tables go on the
+  hidden wrapper, and the hand-written docs on the alias. Rustdoc shows a
+  re-export's own docs followed by the original item's, so the macro's page
+  shows both. Rustdoc drops the docs of intermediate re-exports across crates,
+  so tables placed on the alias would vanish when another crate re-exports the
+  macro with its own docs.
+- **Escape hatch.** In the form `pub NAME => PATH { ... }`, `template: { ... }`
+  is replaced by `generator: { $crate::PATH }`.
 
 ### Why the bare-name alias
 
@@ -116,302 +141,92 @@ downstream imports, and full paths all work.
 
 An earlier design generated one `#[proc_macro]` per schema. That forced every
 client to keep its schemas in a separate proc-macro crate (Device Envoy had a
-`device-envoy-macros` crate). The alias removed that crate, which is what lets
-a schema live beside the API it generates (see
-[Why schemas live beside their APIs](#why-schemas-live-beside-their-apis)).
+`device-envoy-macros` crate). The alias removed that crate.
 
-Because every generated reference goes through `$crate`, a client still works
-when it is renamed in a user's `Cargo.toml`. Schema defaults can also use
-`$crate::...` paths.
+### `$crate`
 
-## Schema language
+Every reference the generated code makes to the client goes through `$crate`:
+the wrapper calls `$crate::__const_structures_expand!`, templates write
+`$crate::...`, and schema defaults may too. `$crate` survives because the
+template and schema tokens are embedded in the client's own `macro_rules!`
+wrapper, where `$crate` means the client crate. So a client still works when a
+user renames it in `Cargo.toml`. (`define!` itself reads `$crate` in a default
+as `crate` while validating and documenting, in `dollar_crate_as_crate`; the
+wrapper keeps the original tokens.) That is also why each client must re-export
+`expand!` at its crate root under the fixed name `__const_structures_expand`.
 
-A definition takes one of two forms:
+## How a call is expanded
 
-```text
-{ATTR} VIS NAME { BODY } generate { TEMPLATE }      // template form
-{ATTR} VIS NAME => GENERATOR_PATH { BODY }          // escape hatch (see below)
-```
+### When the library compiles: `define!`
 
-`BODY` is a comma-separated list of fields and at most one members section:
+`schema::define`:
 
-```text
-{/// doc} [#[default_display = "..."]] NAME : KIND [= DEFAULT]     leaf field
-{/// doc}                             NAME ?: KIND                 optional leaf
-{/// doc}                             NAME [?]: { BODY }           nested block, optionally optional
-{/// doc}                             members MIN..=MAX { BODY }   bounded members
-{/// doc}                             members MIN.. { BODY }       members without an upper limit
-```
+1. Parses the definition (`Definition`): attributes, visibility, name, the
+   optional `=> PATH`, the schema body, and the `generate` block.
+2. Parses the schema into a `BodySpec` (fields, kinds, defaults, blocks, one
+   optional `MembersSpec`) and reports schema errors.
+3. Parses and type-checks the template against the `BodySpec`
+   (`Template::parse` with sigil `$`). This is why template mistakes are
+   reported when the library compiles. Checking resolves every path against
+   the schema, tracking `$for` and `$if let` variables in scopes.
+4. Generates the macro docs (`macro_doc`).
+5. Emits the wrapper and alias shown above.
 
-- **Kinds:** `ident`, `expr`, and `ty`. A value is parsed with the parser for
-  its kind, so commas inside a generic type or an expression stay part of that
-  value. An `ident` is pasted into paths and identifiers (Device Envoy uses it
-  for peripheral names like `PIN_3`). An `expr` can be any Rust expression,
-  including a block expression.
-- **Required, optional, defaulted:** a leaf with no default is required.
-  `name?:` makes it optional, and the template sees it as absent or present.
-  `= DEFAULT` supplies a value when the caller omits the field. A field cannot
-  be both optional and defaulted.
-- **`#[default_display = "..."]`** changes only how a single default value is
-  shown in docs, for example `"Current::Milliamps(250)"` instead of
-  `$crate::led_strip::CURRENT_DEFAULT`. The template still receives the real
-  default tokens.
-- **`by_index[A, B, ...]`** is a default for member fields, and for nested
-  blocks inside members. The member at index `i` gets the `i`th value. A member
-  past the end of the list must give the field explicitly.
-- **Nested blocks** contain fields, never members.
-- **Members** are allowed only at the top level of a schema, at most one
-  section per schema. A field that is itself named `members` is written
-  `members: KIND`. `members` followed by an integer starts a members section.
-- **Field attributes** may be only doc comments and `#[default_display]`.
+### When a user calls the macro: `expand!`
 
-Example (this is [`examples/normalized.rs`](../examples/normalized.rs)'s schema):
+The wrapper forwards the call to `instance::expand`, which:
 
-```text
-const_structures::define! {
-    /// A named collection rendered by a template.
-    pub channels {
-        /// Required device address.
-        address: ident,
-        /// Whether polling is enabled by default.
-        enabled: expr = true,
-        /// One or more named channel members.
-        members 1..=2 {
-            /// The channel input.
-            input: ident,
-            /// Optional nested range limits.
-            limits?: {
-                /// Inclusive lower bound.
-                min: expr,
-                /// Inclusive upper bound.
-                max: expr,
-            },
-        }
-    }
+1. Parses its input (`ExpandInput`): the macro name, the template or generator
+   path, the schema tokens (re-parsed into a `BodySpec`), and the user's tokens.
+2. Parses the user's declaration (`Declaration`). Values are parsed by their
+   schema kind, so a comma inside `Vec<A, B>` stays inside the value. Members
+   are recognized by parsing ahead for `{attrs} [vis] Name {`, which also
+   accepts a visibility forwarded as a `macro_rules!` `$vis`. Structural errors,
+   such as a `:` after a name or a visibility on a member, stop here.
+3. Resolves fields (`resolve_fields`): walks the schema in order, takes the
+   user's value or the default (`by_index` uses the member's position), and
+   marks optional fields absent or present. Unknown, duplicate, and missing
+   fields, wrong member counts, and duplicate members are collected in an
+   `Errors` value and combined with `syn::Error::combine`, so the user sees
+   them all at once.
+4. Builds instance docs (`instance_doc`), unless the declaration or member
+   carries written doc text.
+5. Produces output:
+   - **Template form:** re-parses the embedded template (sigil `#`), builds a
+     `Data` tree (built-ins, fields, and members with their `index`), and
+     renders it. Rendering copies tokens, substitutes values, repeats `$for`
+     bodies, picks `$if let` branches, and builds identifiers.
+   - **Generator form:** emits `PATH! { attrs: [...], vis: [...], name: ...,
+     doc: "...", fields..., member_count: N, members: [...] }`. The format is
+     documented under "Escape hatch" in `src/define.md`.
 
-    generate { /* see the template section */ }
-}
-```
+### Spans and diagnostics
 
-## Invocation syntax
+- Values are the user's own tokens, inserted unchanged, so a type error in
+  generated code points at the user's value. The `alias-regression` UI test
+  `template_caller_span` checks this.
+- A compound `expr` value is wrapped in a parenthesis group with the call-site
+  span, around the user's tokens (see the rationale below).
+- An identifier built by `$ident`, `$snake`, or `$upper` takes the span of the
+  first value inserted into it, so errors about it point at the user's name.
+- Template tokens come from the library's wrapper, so errors in them point
+  into the library's `generate` block.
+- Framework errors are `syn::Error`s spanned on the offending token. The full
+  catalog is under "Errors" in `src/define.md`.
 
-A caller writes one declaration:
+## Framework versus library
 
-```text
-macro! { {ATTR} [VIS] Name { ITEM, ... } }
+The framework owns everything that follows from the schema: syntax, parsing,
+validation, defaults, member handling, documentation, and the mechanics of
+substitution. The library owns everything that gives a declaration meaning:
+which items are generated, their visibility and representation, their
+constructors and tasks, and any domain rules beyond the schema (for example,
+Device Envoy's unique LCD addresses, checked by a `const` assertion its
+template emits). The framework never names a client concept.
 
-ITEM   = field: VALUE                 // leaf field
-       | field: { field: VALUE, ... } // nested block
-       | {ATTR} Member { ITEM, ... }  // a member, when the schema has members
-```
+## Design rationale
 
-```text
-channels! {
-    #[derive(Debug)]
-    pub SensorChannels {
-        address: ADDRESS_0,
-        Temperature { input: INPUT_1, limits: { min: -40, max: 125 } },
-        Humidity { input: INPUT_2 },
-    }
-}
-```
-
-- Fields and members may appear in any order, interleaved. A trailing comma is
-  optional.
-- Fields are keyword-only. Delimiters have exactly one form: a declaration or
-  member is `Name { ... }` and a block is `field: { ... }`.
-- Members inherit the group's visibility. Writing a visibility on a member is
-  an error.
-- Both the declaration and its members accept outer attributes, including doc
-  comments.
-
-After validation, each declaration and member has every schema field in schema
-order. Defaults and `by_index` defaults are filled in, and optional fields are
-marked present or absent.
-
-## Template language
-
-A template is ordinary Rust tokens plus four constructs, each introduced by `$`:
-
-| Construct | Meaning |
-| --- | --- |
-| `$decl.VALUE`, `$var.VALUE` | Substitute a value |
-| `$for var in $decl.members { ... }` | Repeat once per member |
-| `$if let Some(var) = $optional { ... } else { ... }` | Branch on an optional field or block; `else` is optional |
-| `$ident(...)`, `$snake(...)`, `$upper(...)` | Build an identifier from parts |
-
-`$crate` passes through unchanged. Any other `$` that does not start one of
-these constructs is an error.
-
-### Namespaces
-
-Everything that belongs to the declaration is reached through `$decl`.
-Everything that belongs to a loop or `$if let` variable is reached through that
-variable.
-
-| Path | Value |
-| --- | --- |
-| `$decl.name` | The declared identifier |
-| `$decl.vis` | Its visibility; `pub(self)` when none was written |
-| `$decl.doc` | Its generated instance doc, as a string literal (see [Documentation](#documentation)) |
-| `$decl.attrs` | Its outer attributes, as written |
-| `$decl.members` | The member list; valid only as the target of `$for` |
-| `$decl.FIELD`, `$decl.BLOCK.FIELD` | Schema fields |
-| `$m.name`, `$m.vis`, `$m.doc`, `$m.attrs` | The same built-ins for a member `$m`; `vis` is the group's |
-| `$m.index` | The member's zero-based position, as an unsuffixed integer literal |
-| `$m.FIELD`, `$m.BLOCK.FIELD` | The member's fields |
-| `$x`, `$x.FIELD` | An `$if let` binding: the optional leaf itself, or the optional block's fields |
-
-The built-in names are reserved only within their own namespace. A top-level
-schema field may not be named `name`, `vis`, `doc`, `attrs`, or `members`. A
-member field may not be named `name`, `vis`, `doc`, `attrs`, or `index`. A
-top-level field named `index`, or a member field named `members`, is allowed.
-A variable may not be named `decl` or `crate`, or reuse a name already in scope.
-`ident`, `snake`, and `upper` are constructs only when followed by `(`, so they
-remain usable as variable names.
-
-### Paths stop at leaves
-
-A path consumes `.field` only while the current value has fields. Once it
-reaches a leaf, a following `.` is ordinary Rust. So
-`$panel.led_layout.width()` substitutes `led_layout` and keeps `.width()`.
-
-### Expressions keep their precedence
-
-A leaf renders the caller's tokens (or the default's tokens). An `expr` value
-that is a compound expression is wrapped in parentheses, so it stays one
-operand wherever the template puts it:
-
-| Value of `x` | `$decl.x * 2` renders | `$decl.x.pow(2)` renders |
-| --- | --- | --- |
-| `1 + 2` | `(1 + 2) * 2` | `(1 + 2).pow(2)` |
-| `-4` | `(-4) * 2` | `(-4).pow(2)` |
-| `7` | `7 * 2` | `7.pow(2)` |
-| `LIMIT` | `LIMIT * 2` | `LIMIT.pow(2)` |
-
-Self-delimiting expressions stay bare: literals, paths, parenthesized and
-tuple expressions, arrays, struct literals, macro calls, blocks, and calls,
-method calls, field accesses, indexing, `?`, and `.await` on any of these. They
-are already one operand, and staying bare keeps them valid where Rust requires
-that exact form, such as `concat!($decl.label)`, `include_bytes!($decl.file)`,
-or a literal as a bare const generic argument (`Holder::<$decl.len>`).
-Everything else is parenthesized, including unary, binary, cast, range, and
-closure expressions. `ident` and `ty` values are never wrapped.
-
-Why parentheses: `macro_rules!` keeps an `$x:expr` capture's precedence by
-wrapping it in an invisible group, which the parser honors. rustc flattens
-invisible groups that a proc macro emits, so they don't protect anything here.
-The `fixtures/demo` test `expression_values_keep_their_precedence` checks this
-against rustc: without the parentheses, `x: 1 + 2` gave `$decl.x * 2 == 5`.
-
-Two consequences follow:
-
-- `stringify!($decl.x)` shows the parentheses for a compound value (`"(1 + 2)"`).
-- A compound expression used as a const generic argument still needs braces in
-  the template (`Holder::<{ $decl.n }>`), exactly as with `macro_rules!`.
-
-The escape hatch is unaffected: a generator matches `$x:expr`, which gives it
-the usual `macro_rules!` grouping.
-
-### `$for`
-
-`$for var in $decl.members { BODY }` renders `BODY` once per member, in
-declaration order, with `$var` bound to that member. Members exist only at the
-top level, so `$decl.members` is the only valid target. A `$for` may appear
-anywhere tokens may, including inside a parameter list, a tuple type, or an
-array expression:
-
-```text
-pub const MEMBER_COUNT: usize = 0 $for channel in $decl.members { + 1 };
-```
-
-### `$if let`
-
-`$if let Some(var) = PATH { THEN } else { OTHERWISE }` requires `PATH` to be
-an optional field or optional block. When the value is present, `THEN` renders
-with `$var` bound to it. When it is absent, `OTHERWISE` renders, or nothing
-does if there is no `else`. `$var` is in scope only in `THEN`. Reading an
-optional value any other way is an error.
-
-```text
-pub const LIMITS: Option<(i32, i32)> = $if let Some(limits) = $channel.limits {
-    Some(($limits.min, $limits.max))
-} else {
-    None
-};
-```
-
-### Identifier construction
-
-`$ident(PART, ...)` concatenates its parts into one identifier. `$snake(...)`
-and `$upper(...)` concatenate, then convert the result to `snake_case` or
-`SCREAMING_SNAKE_CASE`. Each part is one of:
-
-- a plain identifier or an all-digit integer literal;
-- an identifier-valued path: an `ident`-kind field, `$decl.name`, `$m.name`,
-  `$m.index`, or an `$if let` binding of an optional `ident` field.
-
-The resulting identifier takes the span of the first substituted value, so
-errors on it point at the caller's input.
-
-Snake case starts a new word at an uppercase letter that follows a lowercase
-letter, at an uppercase letter that follows digits which themselves follow a
-lowercase letter, and before the last capital of an acronym followed by a
-lowercase letter. It never doubles an underscore. So `Gpio0LedStrip` becomes
-`gpio0_led_strip`, `HTTPServer` becomes `http_server`, `Ir15Receiver` becomes
-`ir15_receiver`, and all-caps text keeps its words (`LED2D` becomes `led2d`).
-
-```text
-static $upper($decl.name, _STATIC): ... ;          // Gpio0Led -> GPIO0_LED_STATIC
-fn $snake($m.name, _pin)() { ... }                  // First -> first_pin
-let ::embassy_rp::pio::Pio { $for s in $decl.members { $ident(sm, $s.index), } .. } = ...;   // sm0, sm1
-```
-
-### Checking
-
-A template is parsed and type-checked against its schema when `define!` runs,
-that is, when the library compiles, before any caller exists. Unknown values,
-misspelled fields, reading an optional value without `$if let`, looping over
-something other than `$decl.members`, using a non-identifier as an identifier
-part, and bad construct syntax are all reported at the template. The
-[diagnostics](#diagnostics) section lists the messages.
-
-### A complete template
-
-This is the template of [`examples/normalized.rs`](../examples/normalized.rs),
-for the schema shown earlier:
-
-```text
-generate {
-    $decl.attrs
-    #[doc = $decl.doc]
-    $decl.vis struct $decl.name;
-
-    impl $decl.name {
-        pub const ADDRESS: &'static str = stringify!($decl.address);
-        pub const ENABLED: bool = $decl.enabled;
-        pub const MEMBER_COUNT: usize = 0 $for channel in $decl.members { + 1 };
-    }
-
-    $for channel in $decl.members {
-        $channel.attrs
-        #[doc = $channel.doc]
-        $channel.vis struct $channel.name;
-
-        impl $channel.name {
-            pub const INDEX: usize = $channel.index;
-            pub const INPUT: &'static str = stringify!($channel.input);
-            pub const LIMITS: Option<(i32, i32)> = $if let Some(limits) = $channel.limits {
-                Some(($limits.min, $limits.max))
-            } else {
-                None
-            };
-        }
-    }
-}
-```
-
-### Why these four constructs
+### Why these four template constructs
 
 Each construct corresponds to one structural feature of a schema:
 
@@ -445,10 +260,27 @@ to learn the flattening rules. Repetitions could express "present" but not
 construction still needed `paste!`. And mistakes surfaced only when a caller
 happened to hit them.
 
-The `$decl` namespace was added for the same reason the language is small: one
-rule ("the declaration's values are on `$decl`, a variable's values are on the
-variable") replaces a list of special top-level names, and schema fields can
-no longer collide with built-ins outside their own namespace.
+### Why `$decl`
+
+One rule replaces a list of special top-level names: the declaration's values
+are on `$decl`, and a variable's values are on the variable. Schema fields
+cannot collide with built-ins outside their own namespace, so a top-level field
+may be named `index` and a member field `members`.
+
+### Why compound expressions are parenthesized
+
+`macro_rules!` keeps an `$x:expr` capture's precedence by wrapping it in an
+invisible group, which the parser honors. rustc flattens invisible groups that
+a proc macro emits, so they don't protect anything here. This was verified
+against rustc: with invisible groups, `x: 1 + 2` still gave `$decl.x * 2 == 5`.
+The `fixtures/demo` test `expression_values_keep_their_precedence` checks the
+current behavior (`instance::template_tokens`).
+
+Wrapping every expression would break forms Rust requires to be bare, such as
+`concat!("a")`, `include_bytes!("f")`, and a literal const generic argument,
+and could trigger `unused_parens`. So only compound expressions are wrapped
+(`instance::is_self_delimiting`). The exact rule is under "Expressions keep
+their precedence" in `src/define.md`.
 
 ### Why `generate` is required
 
@@ -479,214 +311,38 @@ roughly 200 template lines across 33 schemas, which does not justify the
 estimated 300–400 lines of framework machinery. Revisit if such pairs become
 common.
 
-## Documentation
-
-Docs come from the schema, so they cannot drift from the macro.
-
-### Macro docs
-
-The `define!`'s hand-written docs (prose and examples) go on the public alias.
-The generated syntax block and field tables go on the hidden wrapper. Rustdoc
-shows a re-export's own docs followed by the original item's, so the macro's
-page shows both. A crate that re-exports the macro under its own docs keeps the
-generated tables. (Rustdoc drops the docs of intermediate re-exports across
-crates, which is why the tables live on the wrapper rather than the alias.)
-
-For the `channels` schema above, the generated part is:
-
-````text
-**Syntax:**
-
-```text
-channels! {
-    [<attributes>] [<visibility>] <Name> {
-        address: <ident>,
-        enabled: <expr>, // optional, default: true
-        [<attributes>] <MemberName> { // 1 to 2 members; visibility comes from the group
-            input: <ident>,
-            limits: { // optional
-                min: <expr>,
-                max: <expr>,
-            },
-        },
-    }
-}
-```
-
-**Fields:**
-
-| Field | Kind | Default | Description |
-| ----- | ---- | ------- | ----------- |
-| `address` | ident | required | Required device address. |
-| `enabled` | expr | `true` | Whether polling is enabled by default. |
-
-**Member fields** (1 to 2 members; One or more named channel members.):
-
-| Field | Kind | Default | Description |
-| ----- | ---- | ------- | ----------- |
-| `input` | ident | required | The channel input. |
-| `limits` | block | optional | Optional nested range limits. |
-| `limits.min` | expr | required | Inclusive lower bound. |
-| `limits.max` | expr | required | Inclusive upper bound. |
-````
-
-Defaults are shown pretty-printed, or with their `default_display` spelling.
-A `by_index` default is shown as `by member index: ...`.
-
-### Instance docs
-
-Every declaration and member gets a generated description of the configuration
-the caller used, available to the template as `$decl.doc` and `$m.doc`. For the
-invocation above, `SensorChannels` gets:
-
-```text
-Generated by `channels!`.
-
-| Field | Value |
-| ----- | ----- |
-| `address` | `ADDRESS_0` |
-| `enabled` | `true` (default) |
-
-Members: `Temperature`, `Humidity`.
-```
-
-and `Humidity` gets:
-
-```text
-Member `Humidity` of `SensorChannels`, generated by `channels!`.
-
-| Field | Value |
-| ----- | ----- |
-| `input` | `INPUT_2` |
-| `limits` | `(not set)` |
-```
-
-Defaulted values are marked `(default)`, and absent optional values show as
-`(not set)`.
-
-**A written doc replaces the generated one.** If the caller writes doc text on
-a declaration or member, either as `///` comments or as `#[doc = "..."]`, it
-reaches the template through `attrs`, and that item's `doc` is the empty
-string. The usual template pattern `$decl.attrs #[doc = $decl.doc]` therefore
-shows the caller's text in place of the generated description, not appended to
-it. `#[doc(hidden)]` and other `doc(...)` forms are not doc text and do not
-suppress the generated doc.
-
-This is also how one macro forwards to another without double-documenting.
-Device Envoy's `led_strip!` renders as a one-member `led_strips!` group and
-passes `$decl.attrs #[doc = $decl.doc]` on the member. The member then
-carries `led_strip!`'s description rather than a generated "Member of ..." one.
-
-## Diagnostics
-
-Errors are `syn::Error`s with spans on the offending tokens. During invocation
-checking, field errors from the declaration and from every member are collected
-and reported together.
-
-**When `define!` runs (schema):**
-
-| Mistake | Message |
-| --- | --- |
-| Unknown kind | ``unknown field kind; expected `ident`, `expr`, or `ty` `` |
-| `?` together with `= default` | ``an optional (`?`) field cannot also have a default`` |
-| `default_display` without a single default | `` `default_display` needs a single default value (`= ...`) `` |
-| `by_index` outside member fields | `` `by_index` defaults are allowed only in member fields `` |
-| Members inside a block or member | `members are allowed only at the top level of a schema` |
-| Second members section | `duplicate members section` |
-| Repeated field | ``duplicate schema field `x` `` |
-| `members 3..=1` | `member range is empty` |
-| Other attributes on a field | ``only doc comments and `#[default_display = "..."]` are allowed on schema fields`` |
-| Field named like a built-in | ``field `name` collides with the template's built-in `$decl.name`; rename the field`` |
-| `=> PATH` and `generate` together | ``a `generate { ... }` template replaces `=> generator`; use one or the other`` |
-| Neither | ``expected `generate { ... }` after the schema`` |
-| `=> ::path` | ``the generator path is relative to this crate's root; drop the leading `::` `` |
-
-**When `define!` runs (template):**
-
-| Mistake | Message |
-| --- | --- |
-| `$strip.pnael` | ``no value `pnael` here; expected one of `name`, `vis`, `doc`, `attrs`, `index`, `pin`, `dma`, `panel` `` |
-| `$bus` (a declaration field) | ``unknown template value `$bus`; write `$decl.bus` `` |
-| `$strp.pin` (no such variable) | ``unknown template value `$strp`; expected `$decl`, `$strip` `` |
-| `$strip.panel` (optional) | `` `$strip.panel` is optional; read it with `$if let Some(x) = ... { ... }` `` |
-| `$if let ... = $decl.bus` (required) | `` `$decl.bus` is not optional; `$if let` needs an optional field `` |
-| `$for s in $decl.bus` | `` `$decl.bus` is not the member list; loop over `$decl.members` `` |
-| `$decl.members` as a value | `` `$decl.members` is the member list; loop over it with `$for member in $decl.members { ... }` `` |
-| `$decl` alone | `` `$decl` is the declaration, not a value; name one of ... `` |
-| A block as a value | `` `$x.limits` is a block, not a value; name one of its fields `` |
-| Non-identifier in `$ident(...)` | `` `$decl.doc` is not an identifier; identifier parts must be `ident` fields, `$decl.name`, `$member.name`, or `$member.index` `` |
-| Stray `$` | `` `$` must start a template construct (`$value`, `$for`, `$if`, `$ident(...)`) or `$crate` `` |
-| `$for decl in ...` | `` `decl` is reserved in templates; choose another variable name `` |
-| Shadowing a variable | `` `$strip` is already in scope; choose another variable name `` |
-
-**When a caller invokes the macro:**
-
-| Mistake | Message |
-| --- | --- |
-| Unknown field | ``unknown field `x`; expected one of `a`, `b` (or a member `Name { ... }`)`` |
-| Repeated field | ``duplicate field `x` `` |
-| Missing required field | ``missing required field `x` `` |
-| Wrong kind | ``field `x` expects an identifier`` (or `an expression`, `a type`) |
-| Value given for a block | ``field `x` expects `{ ... }` `` |
-| Block given for a value | `expected a value, not a block` |
-| Member count | `` `channels!` takes 1 to 2 members; found 3 `` |
-| Repeated member | ``duplicate member `X` `` |
-| Visibility on a member | `members take their group's visibility; remove this visibility` |
-| `Name: { ... }` | ``remove the `:` after `Name`; declarations are written `Name { ... }` `` |
-| Member where the schema has none | `` `Name` takes fields only; expected one of ... `` |
-| Member past the `by_index` list | ``field `x` has no default for member index 4; give it explicitly`` |
-| Tokens after the declaration | `unexpected tokens after the declaration body` |
-
-Caller values keep their spans through rendering, so a type error in generated
-code points at the caller's value. The `alias-regression` UI case
-`template_caller_span` checks this: `size: "wide"` is reported as `expected
-u32, found &str` at `"wide"`.
-
-## The generator escape hatch
-
-`pub NAME => GENERATOR_PATH { BODY }` sends the validated declaration to a
-library `macro_rules!` generator instead of a template. `GENERATOR_PATH` is
-relative to the defining crate's root (the wrapper calls `$crate::PATH`). The
-generator receives every field in schema order:
-
-```text
-attrs: [ATTR*], vis: [VIS], name: NAME, doc: "...",
-FIELD: VALUE, ...
-member_count: N,                                   // only when the schema has members
-members: [ { index: I, attrs: [...], vis: [...], name: NAME, doc: "...", FIELD: VALUE, ... }, ... ],
-```
-
-- An inherited visibility is passed as `pub(self)`, because `$vis:vis` cannot
-  match an empty visibility at the end of `[...]`.
-- An optional field arrives as `[]` when absent or `[VALUE]` when present.
-- A block arrives as `{ FIELD: VALUE, ... }`, and an optional block as
-  `[{ ... }]` or `[]`.
-
-The escape hatch is kept for output a template cannot express. It is covered by
-the core tests and the `fixtures/demo` crate. Device Envoy no longer uses it.
-
-## Why schemas live beside their APIs
+### Why schemas live beside their APIs
 
 A schema, its docs, its template, and the Rust items the template calls change
 together. Keeping them in one place means one review sees all of them. The
-generated code also names chip-specific HAL types and crate-private helpers, so
-the declaration belongs in the crate that owns those types. A separate schema
-crate cannot see them.
-
-The proc-macro-per-schema design made colocation impossible, because proc
-macros must live in a proc-macro crate. The wrapper-plus-alias design puts
+generated code also names the library's own types, which may be private or
+platform-specific, so the declaration belongs in the crate that owns them. A
+separate schema crate cannot see them. The wrapper-plus-alias design puts
 `define!` in an ordinary library module, so Device Envoy's
 `crates/device-envoy-rp/src/led_strip.rs` holds the `led_strips!` schema, its
-template, and the `LedStrip` types it instantiates.
+template, and the types it instantiates.
+
+### Why the escape hatch remains
+
+A `macro_rules!` generator can do what a template deliberately can't, such as
+choose output by matching a value's tokens. It is kept for that, with the same
+validation and normalization in front of it. Device Envoy no longer uses it; it
+is covered by the core tests, the `fixtures/demo` crate, and a `define!`
+doctest.
 
 ## Testing
 
-- `const-structures-core` unit tests cover parsing, defaults, member handling,
-  generated docs, template rendering, template diagnostics, embedding, snake
-  case, and the written-doc rule.
+- `const-structures-core` unit tests cover parsing, defaults, members, generated
+  docs, template rendering and type-checking, expression parenthesization,
+  embedding, snake case, and the written-doc rule.
+- The facade's doctests run every Rust example in `README.md` and
+  `src/define.md`. `tests/readme.rs` checks that the README's quick start is
+  byte-for-byte `examples/quick_start.rs`, and that the compiler errors the
+  README quotes match the `readme_*` UI tests.
 - `fixtures/demo` is a client crate with a downstream test and trybuild UI cases
-  under `tests/ui/`: unknown field, duplicate plus missing fields, wrong kind,
-  too many members, member visibility, a template typo, and an unknown clause.
+  under `tests/ui/` for rejected input: unknown field, duplicate and missing
+  fields, wrong kind, too many members, member visibility, template mistakes,
+  and the two errors the README shows.
 - `fixtures/alias-regression` and `fixtures/renamed-user` set
   `#![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]` and
   `#![deny(warnings)]`. They cover internal, module, and root calls, calls from
@@ -695,7 +351,8 @@ template, and the `LedStrip` types it instantiates.
   alias page and the generated field docs. Its UI control
   `alias_via_crate_path` must fail specifically when an alias refers to
   `crate::__const_structures_wrapper_widget`.
-- `cargo run --example normalized` runs the example above.
+- `cargo run --example quick_start` and `cargo run --example commands` run the
+  examples, which assert their own results.
 
 Device Envoy's own suites (`cargo check-all`, RP compile-only tests and demos,
 ESP embedded compile tests, and `just docs`) exercise every client macro on

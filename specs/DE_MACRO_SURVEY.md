@@ -7,8 +7,9 @@ This document records how Device Envoy's declaration macros moved to
 pre-migration baseline, the bugs the migration uncovered, and which macros were
 intentionally left as hand-written `macro_rules!`.
 
-- The framework itself (schema language, templates, docs, diagnostics, export
-  architecture) is specified in [CONST_STRUCTURES_SPEC.md](CONST_STRUCTURES_SPEC.md).
+- The framework's language reference is `src/define.md` (the rustdoc of
+  `define!`); its architecture and design rationale are in
+  [CONST_STRUCTURES_SPEC.md](CONST_STRUCTURES_SPEC.md).
 - Sections marked **Historical** describe Device Envoy as it was at the
   baseline, `main` at `4c1ee16f`. They are kept for comparison and do not
   describe current behavior.

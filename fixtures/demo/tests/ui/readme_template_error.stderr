@@ -1,0 +1,5 @@
+error: `$decl.env_var` is optional; read it with `$if let Some(x) = ... { ... }`
+  --> tests/ui/readme_template_error.rs:16:53
+   |
+16 |             pub const ENV_VAR: &'static str = $decl.env_var;
+   |                                                     ^^^^^^^

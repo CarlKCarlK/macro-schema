@@ -425,7 +425,8 @@ impl FieldAttrs {
     }
 }
 
-/// Emits a hidden exported `macro_rules!` wrapper plus a bare-name `use` alias.
+/// Implements `const_structures::define!`: parses and checks a definition, then emits
+/// a hidden exported `macro_rules!` wrapper plus a bare-name `use` alias.
 ///
 /// The alias must name the wrapper without a `crate::` path: rustc rejects
 /// absolute-path access to a `#[macro_export]` macro produced by macro expansion

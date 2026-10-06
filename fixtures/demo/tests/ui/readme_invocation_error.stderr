@@ -1,0 +1,5 @@
+error: unknown field `defualt`; expected one of `key`, `value`, `default`
+  --> tests/ui/readme_invocation_error.rs:18:48
+   |
+18 |     pub Port { key: "server.port", value: u16, defualt: 8080 }
+   |                                                ^^^^^^^
