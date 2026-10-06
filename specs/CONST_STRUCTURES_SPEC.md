@@ -2,102 +2,153 @@
 
 <!-- TODO0 consider deleting this spec once the work below is implemented and released. -->
 
-## Goal
+## Goal and current state
 
-A general proc-macro system for ergonomic, named, compile-time declarations of
-constant structures: named fields, defaults, required and optional fields,
-nesting, repetition/collections, visibility, validation, and generation of
-strongly typed `const`/`static` Rust.
+`const-structures` is a general-purpose proc-macro framework for declaring
+named, schema-checked macro inputs. A client writes each schema beside its own
+code generator with `const_structures::define!`; the shared
+`const_structures::expand!` parses and validates invocations, inserts defaults,
+builds diagnostics and instance documentation, then calls the client generator.
+The framework does not own or generate a client's domain types.
 
-Existence proofs: Python's keyword-construction ergonomics, and Device
-Envoy's current `macro_rules!` macros. Neither is a spec. The name and API say
-nothing about Python.
+Device Envoy is the first substantial client and migration corpus, not a
+compatibility target. Its declaration macros use this framework; small
+handwritten expression and initialization macros remain ordinary
+`macro_rules!` macros. Device Envoy-specific names, defaults, hardware kinds,
+and code-generation rules belong in Device Envoy schemas and generators, not
+in this crate.
 
-## Success criterion
+The design target is a small framework with one definition wrapper per public
+macro and one expansion proc macro for parsing and validation. Schemas are
+client-local. The framework supplies common syntax, field kinds, optional and
+default values, nested blocks, member declarations, diagnostics, and generated
+configuration docs. It does not require unrelated client macros to share
+field names or semantics.
 
-After converting all of Device Envoy, the proc-macro implementation is easier
-to understand than the current declarative macros as a whole, not merely
-prettier in isolated examples. If covering everything needs a forest of
-exceptions, either this framework is wrong or Device Envoy needs more
-regularization.
+## Schema and documentation
 
-## Hard rules
+Each client field is declared once with its name, kind, optional/default
+behavior, and documentation. The framework derives invocation parsing,
+default insertion, validation diagnostics, and the macro's syntax and field
+tables from that schema. Generated declarations receive documentation listing
+the resolved configuration, with defaulted values marked and values formatted
+for readability. Client prose, examples, and generated-type stubs remain
+client-owned; Device Envoy keeps `cfg(doc)` sample types for hardware-generated
+APIs. Client generators also decide visibility and whether generated types
+expose public constructors. Device Envoy keeps helper statics/tasks and
+synthetic one-member groups private. Constructors may be `pub`; the generated
+type’s own visibility controls access.
 
-1. One regular syntax for every declaration.
-2. Keyword-like fields everywhere; any order.
-3. Optional fields and defaults expressed the same way everywhere.
-4. Rust visibility (`pub`, `pub(crate)`, ...) handled uniformly, in one place.
-5. Repeated sub-items use one standard form.
-6. Unknown, duplicate, missing, or incompatible fields produce good, spanned
-   compile errors.
-7. Per-structure behavior is mostly data: allowed fields, defaults,
-   constraints, and code-generation hooks.
-8. If a Device Envoy macro cannot fit cleanly, change Device Envoy's syntax
-   rather than add a special case.
+## Framework requirements
 
-## Documentation comes from the schema
+1. A client defines a macro with a schema and a generator path relative to its
+   own crate root. The schema stays beside the code it describes.
+2. One generated `macro_rules!` wrapper forwards to the single `expand!` proc
+   macro. Expansion validates the invocation and calls the client generator
+   with normalized fields.
+3. Fields have declared kinds, required or optional status, and optional
+   defaults. Unknown, duplicate, missing, and invalid inputs receive spanned
+   diagnostics.
+4. The framework supports attributes and visibility on declarations, nested
+   field blocks, and bounded or unbounded member sections. Members inherit
+   container visibility; an explicit member visibility is an error.
+5. `by_index[...]` defaults may supply a value according to a member's index.
+   Generators receive normalized fields, member indices, and member counts.
+6. Field order is accepted independently of a schema's semantic meaning.
+   Framework syntax rules apply uniformly; schemas own names, kinds,
+   defaults, and domain-specific constraints.
+7. `$crate` hygiene keeps generated wrapper references and schema defaults
+   valid when a client dependency is renamed. A generated macro wrapper is
+   first re-exported by bare name in its defining scope; do not refer to its
+   hidden exported name through a crate path.
+8. Schema field documentation and defaults drive the generated configuration
+   documentation. Client-authored macro docs and examples remain with the
+   client schema.
 
-Each field is described once (name, kind, required/default, doc string). From
-that one description come parsing, default insertion, error messages,
-generated code, and rustdoc. Success test: no field is described in more than
-one place.
+## Device Envoy choices
 
-- Generated items get `#[doc]` listing the configuration actually used,
-  marking defaulted fields, with values formatted via `prettyplease` (raw
-  `TokenStream::to_string()` spacing is unreadable).
-- Generated docs use ```` ```text ```` fences, never ```` ```rust ````: they
-  land in the user's crate and would run as its doctests.
-- The macro's own doc page is static, so keep its field table in sync with a
-  test (or a `build.rs` that renders it), not by hand.
-- Device Envoy's `*_generated` doc modules become real macro invocations.
+These choices regularize this client and are not requirements on other users
+of `const-structures`:
 
-## Decisions (2026-10-04)
+- Shared group fields live inside the group braces, beside members. Members
+  use `Name { ... }`; fields use `name: value`.
+- Declarations and members accept any field order, an optional trailing
+  comma, and outer attributes. Members inherit the containing declaration's
+  visibility.
+- Device Envoy schemas use one spelling per field and use named declarations
+  for `servo!` on both RP and ESP.
+- Device Envoy chooses which field names, defaults, peripheral identifier
+  kinds, cross-member constraints, and generated items each macro supports.
+  For example, reconciling `max_frames` and `max_steps` is a client decision.
+- Positional or statement-oriented helpers such as `tone!`, `combine!`,
+  `tga!`, `pio_split!`, and `init_and_start!` remain handwritten
+  `macro_rules!` macros because they are not schema-backed declarations.
 
-From the [Device Envoy survey](DE_MACRO_SURVEY.md):
+## Schema and invocation grammar
 
-1. Shared group fields go inside the group's braces, next to its members.
-2. Members are written `Name { ... }`, exactly like a top-level declaration.
-3. Every declaration and member accepts any field order, an optional
-   trailing comma, and `#[attrs]`. Only a top-level declaration takes a
-   visibility; members always have their group's visibility (writing one is
-   an error).
-4. No field aliases. One spelling per field.
-5. `servo!` becomes a named declaration on both rp and esp.
-6. The framework is indifferent to whether different macros agree with each
-   other. It enforces syntax; each schema owns its field meanings and
-   defaults. Making Device Envoy's macros agree semantically (e.g.
-   `max_frames` vs `max_steps`) is Device Envoy's own, separate decision.
-7. Out of scope: positional expression macros (`tone!`, `combine!`, `tga!`,
-   `pio_split!`) and `init_and_start!`. They stay `macro_rules!`.
-8. Field syntax is `name: value`.
+A definition names the public macro, the client-local generator, and the schema.
+Schema fields use the kinds `ident`, `expr`, and `ty`. A field may be required,
+optional (`?`), defaulted (`= value`), or a nested block. Optional fields
+cannot also declare defaults. A nested block contains fields and may itself
+be optional.
 
-## Target grammar
-
-```ebnf
-Invocation  = Declaration ;
-Declaration = { ATTR } VIS NAME Body ;
-Body        = "{" [ Item { "," Item } [ "," ] ] "}" ;
-Item        = Field | Member ;
-Member      = { ATTR } NAME Body ;            (* visibility comes from the group *)
-Field       = IDENT ":" Value ;
-Value       = Body | KindValue ;
+```text
+const_structures::define! {
+    /// Client-authored macro documentation.
+    pub configure => __configure_generate {
+        /// Required resource name.
+        resource: ident,
+        /// Omitted value is passed as an empty bracket group.
+        timeout?: expr,
+        /// A default may use the client crate's hygienic path.
+        retries: expr = $crate::DEFAULT_RETRIES,
+        /// Per-member defaults use declaration order, starting at zero.
+        members 1..=2 {
+            /// Channel defaults by member index.
+            channel: ident = by_index[CHANNEL_0, CHANNEL_1],
+            /// Nested configuration.
+            panel?: {
+                width: expr,
+            },
+        },
+    }
+}
 ```
 
-- `Field` vs member `Declaration` is decided with two tokens of lookahead:
-  `IDENT ":"` is a field; `#`, a visibility keyword, or `IDENT "{"` starts a
-  member.
-- A value starting with `{` is a nested field list (e.g. `led2d: { ... }`).
-  A Rust block expression as a value must be parenthesized.
-- `KindValue` is parsed according to the field's kind in the schema
-  (`Expr`, `Type`, `Ident`, or one of a fixed set of idents). Values are not
-  split at top-level commas first, because commas also appear inside
-  `Foo<A, B>` and `f::<A, B>()`, where `<>` are not token groups.
-- Whether a declaration may have members, which kinds, and how many is
-  schema data.
+`members MIN..=MAX { ... }` declares a bounded member section;
+`members MIN.. { ... }` has no maximum. Each member is written `Name { ... }`
+inside an invocation. Members inherit the container visibility, and spelling a
+visibility on a member is rejected. Declarations and members accept outer
+attributes. The schema's member section controls whether members are allowed
+and their valid count.
 
-## Examples (Device Envoy, regularized)
+Input declarations use `macro! { [attributes] [visibility] Name { ... } }`.
+Fields use `field: value`; members use `Name { ... }`. Fields can appear in
+any order and a trailing comma is optional. Nested field blocks use braces; leaf `expr` fields accept ordinary Rust
+expressions, including block expressions. The schema distinguishes them. The parser
+uses schema kinds to parse values, so generic type and expression commas stay
+inside their token syntax.
 
-```rust,ignore
+The generator receives each field in schema order. Required/defaulted leaf
+fields arrive as values; an omitted optional field arrives as `[]`, and a
+provided optional field as `[value]`. Optional blocks use the same empty or
+single-bracketed-block representation. Groups also receive `member_count` and
+member entries in declaration order; each entry carries its zero-based `index`,
+attributes, inherited visibility, name, generated configuration doc, and
+normalized fields. A `by_index[...]` default selects the value at the member's
+index; if no indexed value exists, the caller must supply that field.
+
+Schema field doc comments describe fields in generated syntax and tables.
+`#[default_display = "..."]` changes how a single-value default is shown in
+documentation without changing the tokens passed to the generator. The macro's
+syntax and field tables are generated from the schema. Each generated item
+receives a configuration table showing resolved values and marking defaults.
+These generated tables use documentation text; client-owned prose and examples
+remain ordinary client documentation.
+
+## Example (Device Envoy syntax)
+
+```text
 led_strips! {
     pub LedStrips0 {
         pio: PIO0,
@@ -129,15 +180,15 @@ i2cs! {
     }
 }
 
-servo! { pub Pan { pin: PIN_0, slice: PWM_SLICE0, channel: A } }
+servo! { Servo11 { pin: PIN_11 } }
 ```
 
 ## Architecture
 
 ```text
 const-structures (general; knows nothing about any user library)
-    define!   declares one macro from a schema; generates its rustdoc
-    expand!   generic parse / validate / default / diagnostics
+    define!   declares one macro from a schema; generates syntax and field docs
+    expand!   generic parse / validate / default / diagnostics / dispatch
 
 <library> (schemas live next to the code they generate)
     #[doc(hidden)]
@@ -145,7 +196,7 @@ const-structures (general; knows nothing about any user library)
 
     pub mod button {
         const_structures::define! {
-            /// Hand-written docs and examples (doctests run in this crate).
+            /// Client-authored prose and examples.
             pub button_watch => __button_watch_generate {   // generator path is crate-relative
                 /// GPIO pin for the button.
                 pin: ident,
@@ -187,42 +238,28 @@ Never refer to the hidden wrapper by its crate-root path.
 
 An earlier design generated one `#[proc_macro]` per schema, which forced each
 library to keep its schemas in a separate proc-macro crate. The alias removes that
-crate. Tested with the lint set to `forbid` in `fixtures/demo`, including internal
-invocations from another macro, and a renamed dependency in `fixtures/renamed-user`.
+crate. `fixtures/alias-regression` and `fixtures/renamed-user` enforce
+`#![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]` and
+`#![deny(warnings)]`. They cover internal/module/root calls, calls from another
+macro, downstream imports and full paths, further re-exports, and renamed
+dependencies. The alias fixture also builds rustdoc and checks the module alias
+page and generated field docs. Its `tests/ui/alias_via_crate_path.rs` control
+must fail specifically when an alias accesses `crate::__const_structures_widget`.
 
-## Project layout and practice
+## Crate layout and diagnostics
 
-Follows "Nine Rules for Creating Procedural Macros in Rust" (Kadie), with
-dependencies updated:
+The facade crate re-exports the proc macros. `const-structures-derive` is the
+thin compiler-facing shim; `const-structures-core` implements parsing,
+validation, normalization, documentation, and dispatch over `proc_macro2`.
+Core errors use `syn::Error`, are combined where useful, and are emitted as
+compile errors by the shim. Downstream, renamed-dependency, and alias-path
+integration fixtures are separate workspace members. Caller field and member
+spans survive normalization; unknown/duplicate fields, missing required fields,
+wrong kinds, and member-count violations retain useful source locations. Trybuild UI cases live under
+`fixtures/demo/tests/ui/` and cover rejected input with source diagnostics.
 
-- `const-structures`: facade crate; re-exports the macro; integration tests and
-  `trybuild` UI tests in `tests/`.
-- `const-structures-derive`: thin `proc-macro = true` shim.
-- `const-structures-core`: all logic on `proc_macro2`; unit tests compare
-  `prettyplease` output with `pretty_assertions` diffs, debuggable normally.
-- `syn` 3. Errors are `syn::Error` returned through `?` and merged with
-  `Error::combine`, emitted once via `into_compile_error()` in the shim. This
-  replaces the article's `proc-macro-error` (unmaintained; its successor
-  `proc-macro-error2` still pins `syn` 2) and avoids panic-based `abort!`.
+## Device Envoy migration corpus
 
-## Rollback plan
-
-- This repo is standalone; deleting it removes the experiment entirely.
-- Device Envoy work happens only on branch `proc-macro-const-structures`
-  (from `main` at `4c1ee16f`), using a path dependency on this repo. Rolling
-  back means deleting that branch; `main` is never touched.
-- Convert Device Envoy one macro per commit so partial rollback is a revert.
-
-## Device Envoy corpus
-
-Files containing `macro_rules!` at the start of the experiment:
-
-- core: `audio_player`, `cyd/display/tga`, `wifi_auto/fields`
-- esp: `lib`, `init_and_start`, `audio_player`, `button/button_watch`, `ir`,
-  `ir/kepler`, `ir/mapping`, `lcd_text`, `led`, `led2d`, `led_strip`,
-  `led_strip/spi`, `servo`, `servo_player`
-- rp: `lib`, `audio_player`, `button/button_watch`, `ir`, `ir/kepler`,
-  `ir/mapping`, `lcd_text`, `led`, `led2d`, `led_strip`, `pio_irqs`, `servo`,
-  `servo_player`, `wifi_auto/stack`
-
-Inventory, grammars, and inconsistencies: [DE_MACRO_SURVEY.md](DE_MACRO_SURVEY.md).
+The current client inventory, finalized choices, migration scale, and
+remaining handwritten macros are documented in
+[DE_MACRO_SURVEY.md](DE_MACRO_SURVEY.md).
