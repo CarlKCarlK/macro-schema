@@ -337,7 +337,8 @@ fn define_documents_members_and_blocks() -> Result<()> {
         | Field | Kind | Default | Description |\n\
         | ----- | ---- | ------- | ----------- |\n\
         | `bus` | ident | `BUS0` | Shared bus. |\n\
-        \n**Member fields** (1 to 2 members; One strip per member.):\n\n\
+        \n**Member fields** (1 to 2 members):\n\n\
+        One strip per member.\n\n\
         | Field | Kind | Default | Description |\n\
         | ----- | ---- | ------- | ----------- |\n\
         | `pin` | ident | required | Data pin. |\n\
@@ -414,7 +415,7 @@ fn members_may_have_no_upper_limit() -> Result<()> {
     assert!(output.contains("member_count : 3"), "{output}");
     assert_eq!(
         error_message(run(schema, "lcds", quote! { Lcds {} })).as_deref(),
-        Some("`lcds!` takes at least 1 members; found 0")
+        Some("`lcds!` takes at least 1 member; found 0")
     );
     Ok(())
 }

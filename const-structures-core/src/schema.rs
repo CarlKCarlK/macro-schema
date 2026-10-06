@@ -241,11 +241,13 @@ impl MembersSpec {
         })
     }
 
+    /// The allowed member count, with its noun: "at least 1 member", "1 to 4 members".
     pub fn count_text(&self) -> String {
+        let noun = |count: usize| if count == 1 { "member" } else { "members" };
         match self.max {
-            None => format!("at least {}", self.min),
-            Some(max) if max == self.min => format!("exactly {max}"),
-            Some(max) => format!("{} to {max}", self.min),
+            None => format!("at least {} {}", self.min, noun(self.min)),
+            Some(max) if max == self.min => format!("exactly {max} {}", noun(max)),
+            Some(max) => format!("{} to {max} members", self.min),
         }
     }
 }
@@ -485,21 +487,15 @@ pub(crate) fn macro_doc(macro_name: &Ident, body: &BodySpec) -> Result<String> {
     field_table(&body.fields, &mut doc)?;
     if let Some(members) = &body.members {
         doc.push_str(&format!(
-            "\n**Member fields** ({} members{}):\n\n",
-            members.count_text(),
-            doc_suffix(&members.doc)
+            "\n**Member fields** ({}):\n\n",
+            members.count_text()
         ));
+        if !members.doc.is_empty() {
+            doc.push_str(&format!("{}\n\n", members.doc));
+        }
         field_table(&members.body.fields, &mut doc)?;
     }
     Ok(doc)
-}
-
-fn doc_suffix(doc: &str) -> String {
-    if doc.is_empty() {
-        String::new()
-    } else {
-        format!("; {doc}")
-    }
 }
 
 fn syntax_lines(body: &BodySpec, depth: usize, doc: &mut String) -> Result<()> {
@@ -533,7 +529,7 @@ fn syntax_lines(body: &BodySpec, depth: usize, doc: &mut String) -> Result<()> {
     }
     if let Some(members) = &body.members {
         doc.push_str(&format!(
-            "{indent}[<attributes>] <MemberName> {{ // {} members; visibility comes from the group\n",
+            "{indent}[<attributes>] <MemberName> {{ // {}; visibility comes from the group\n",
             members.count_text()
         ));
         syntax_lines(&members.body, depth + 1, doc)?;

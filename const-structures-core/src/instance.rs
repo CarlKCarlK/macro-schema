@@ -346,7 +346,7 @@ fn resolve_members<'a>(
         errors.push(Error::new(
             span,
             format!(
-                "`{macro_name}!` takes {} members; found {count}",
+                "`{macro_name}!` takes {}; found {count}",
                 members_spec.count_text()
             ),
         ));
