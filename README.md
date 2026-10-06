@@ -39,10 +39,10 @@ its own, such as:
 - a **task** or handler that a framework requires to be a concrete, non-generic
   function.
 
-Values can't create items. A `const` struct can describe a configuration, but
-it can't declare a type or a static; a builder runs later still, at run time.
-Generics help only where the surrounding framework accepts generic items. When
-a library has to add items to its user's crate, it needs a macro.
+Values can't create items. A `const` struct can describe a configuration, and a
+builder can assemble one, but neither can declare a type or a static. Generics
+help only where the surrounding framework accepts generic items. When a library
+has to add items to its user's crate, it needs a macro.
 
 ## The problem
 
@@ -60,7 +60,9 @@ lot of it. Writing `setting!` by hand with `macro_rules!` means handling:
 Done with `macro_rules!`, this machinery is usually built from recursive
 "tt-muncher" rules. It is often far larger, and much harder to check, than the
 code the macro finally emits. In [Device Envoy](#origin-device-envoy), hand-written
-declaration macros came to over 14,000 lines.
+declaration macros came to over 14,000 lines. A hand-written procedural macro
+avoids the tt-munching, but needs its own crate, its own parser, and its own
+error reporting and documentation.
 
 With `macro-schema`, you write the schema and the template, and that
 machinery comes from the crate. Both live in your library, next to the API they
