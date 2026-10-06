@@ -440,13 +440,13 @@ fn template_error(template: TokenStream) -> Option<String> {
 #[test]
 fn template_renders_loops_optionals_and_identifiers() -> Result<()> {
     let template = quote! {
-        $vis struct $name;
-        static $upper($bus, _BUS): u8 = 0;
-        $for strip in $members {
+        $decl.vis struct $decl.name;
+        static $upper($decl.bus, _BUS): u8 = 0;
+        $for strip in $decl.members {
             $if let Some(panel) = $strip.panel {
-                $vis struct $ident($strip.name, Panel)([u8; $panel.width]);
+                $decl.vis struct $ident($strip.name, Panel)([u8; $panel.width]);
             } else {
-                $vis struct $strip.name;
+                $decl.vis struct $strip.name;
             }
             fn $snake($strip.name, _pin)() -> usize { $strip.index }
             const _: $crate::Dma = $crate::Dma::$strip.dma;
@@ -480,40 +480,68 @@ fn template_renders_loops_optionals_and_identifiers() -> Result<()> {
 fn template_errors_are_reported_at_define_time() {
     let cases = [
         (
-            quote! { $for strip in $members { $strip.pnael } },
-            "no field `pnael` here; expected one of `name`, `vis`, `doc`, `attrs`, `index`, `pin`, `dma`, `panel`",
+            quote! { $for strip in $decl.members { $strip.pnael } },
+            "no value `pnael` here; expected one of `name`, `vis`, `doc`, `attrs`, `index`, `pin`, `dma`, `panel`",
         ),
         (
-            quote! { $for strip in $members { $strip.panel } },
+            quote! { $decl.buss },
+            "no value `buss` here; expected one of `name`, `vis`, `doc`, `attrs`, `members`, `bus`",
+        ),
+        (
+            quote! { $bus },
+            "unknown template value `$bus`; write `$decl.bus`",
+        ),
+        (
+            quote! { $name },
+            "unknown template value `$name`; write `$decl.name`",
+        ),
+        (
+            quote! { $for strip in $decl.members { $strp.pin } },
+            "unknown template value `$strp`; expected `$decl`, `$strip`",
+        ),
+        (
+            quote! { $for strip in $decl.members { $strip.panel } },
             "`$strip.panel` is optional; read it with `$if let Some(x) = ... { ... }`",
         ),
         (
-            quote! { $if let Some(x) = $bus {} },
-            "`$bus` is not optional; `$if let` needs an optional field",
+            quote! { $if let Some(x) = $decl.bus {} },
+            "`$decl.bus` is not optional; `$if let` needs an optional field",
         ),
         (
-            quote! { $for strip in $bus {} },
-            "`$bus` is not the member list; loop over `$members`",
+            quote! { $for strip in $decl.bus {} },
+            "`$decl.bus` is not the member list; loop over `$decl.members`",
         ),
         (
-            quote! { $members },
-            "`$members` is the member list; loop over it with `$for member in $members { ... }`",
+            quote! { $decl.members },
+            "`$decl.members` is the member list; loop over it with `$for member in $decl.members { ... }`",
         ),
         (
-            quote! { $buss },
-            "unknown template value `$buss`; expected one of `$name`, `$vis`, `$doc`, `$attrs`, `$members`, `$bus`",
+            quote! { $decl },
+            "`$decl` is the declaration, not a value; name one of `name`, `vis`, `doc`, `attrs`, `members`, `bus`",
         ),
         (
-            quote! { $for strip in $members { $ident($strip.dma, $strip.pin) $ident($doc) } },
-            "`$doc` is not an identifier; identifier parts must be `ident` fields, `$name`, or `$member.index`",
+            quote! { $for strip in $decl.members { $strip.members } },
+            "no value `members` here; expected one of `name`, `vis`, `doc`, `attrs`, `index`, `pin`, `dma`, `panel`",
+        ),
+        (
+            quote! { $decl.index },
+            "no value `index` here; expected one of `name`, `vis`, `doc`, `attrs`, `members`, `bus`",
+        ),
+        (
+            quote! { $for strip in $decl.members { $ident($strip.dma, $strip.pin) $ident($decl.doc) } },
+            "`$decl.doc` is not an identifier; identifier parts must be `ident` fields, `$decl.name`, `$member.name`, or `$member.index`",
         ),
         (
             quote! { $( x )* },
             "`$` must start a template construct (`$value`, `$for`, `$if`, `$ident(...)`) or `$crate`",
         ),
         (
-            quote! { $for bus in $members {} },
-            "`bus` is already a template value; choose another name",
+            quote! { $for decl in $decl.members {} },
+            "`decl` is reserved in templates; choose another variable name",
+        ),
+        (
+            quote! { $for strip in $decl.members { $for strip in $decl.members {} } },
+            "`$strip` is already in scope; choose another variable name",
         ),
     ];
     for (template, expected) in cases {
@@ -522,14 +550,46 @@ fn template_errors_are_reported_at_define_time() {
 }
 
 #[test]
+fn field_names_may_not_shadow_their_namespace_builtins() {
+    for (schema, expected) in [
+        (
+            "__gen { name: ident }",
+            "field `name` collides with the template's built-in `$decl.name`; rename the field",
+        ),
+        (
+            "__gen { members 1.. { index: expr } }",
+            "field `index` collides with the template's built-in `$member.index`; rename the field",
+        ),
+    ] {
+        let body = syn::parse_str::<Schema>(schema)
+            .expect("schema parses")
+            .body;
+        let error = Template::parse(TokenStream::new(), &body, AUTHOR_SIGIL)
+            .err()
+            .map(|error| error.to_string());
+        assert_eq!(error.as_deref(), Some(expected));
+    }
+    // Built-ins are reserved only in their own namespace.
+    for schema in [
+        "__gen { index: expr }",
+        "__gen { members 1.. { members: expr } }",
+    ] {
+        let body = syn::parse_str::<Schema>(schema)
+            .expect("schema parses")
+            .body;
+        assert!(Template::parse(TokenStream::new(), &body, AUTHOR_SIGIL).is_ok());
+    }
+}
+
+#[test]
 fn define_template_form_embeds_template_with_hash_sigils() -> Result<()> {
     let input = quote! {
-        pub led { pin: ident } generate { struct $name; const _: $crate::Pin = $crate::Pin::$pin; }
+        pub led { pin: ident } generate { struct $decl.name; const _: $crate::Pin = $crate::Pin::$decl.pin; }
     };
     let output = define(input)?.to_string();
     assert!(
         output.contains(
-            "template : { struct # name ; const _ : $ crate :: Pin = $ crate :: Pin :: # pin ; }"
+            "template : { struct # decl . name ; const _ : $ crate :: Pin = $ crate :: Pin :: # decl . pin ; }"
         ),
         "{output}"
     );
@@ -563,8 +623,8 @@ fn snake_case_splits_words_digits_and_acronyms() {
 #[test]
 fn written_doc_replaces_generated_instance_doc() -> Result<()> {
     let template = quote! {
-        $attrs #[doc = $doc] $vis struct $name;
-        $for strip in $members { $strip.attrs #[doc = $strip.doc] struct $strip.name; }
+        $decl.attrs #[doc = $decl.doc] $decl.vis struct $decl.name;
+        $for strip in $decl.members { $strip.attrs #[doc = $strip.doc] struct $strip.name; }
     };
     let input = quote! {
         /// Hand-written.

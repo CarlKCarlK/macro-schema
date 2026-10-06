@@ -3,9 +3,10 @@
 //! A template is ordinary Rust tokens plus four structural constructs, all introduced
 //! by `$`:
 //!
-//! - `$value`, `$member.field`: substitute a resolved value.
-//! - `$for member in $members { ... }`: repeat once per member.
-//! - `$if let Some(x) = $optional { ... } else { ... }`: branch on an optional field.
+//! - `$decl.value`, `$member.field`: substitute a resolved value. Every declaration
+//!   value is reached through `$decl`; every member value through its loop variable.
+//! - `$for member in $decl.members { ... }`: repeat once per member.
+//! - `$if let Some(x) = $decl.optional { ... } else { ... }`: branch on an optional field.
 //! - `$ident(...)`, `$snake(...)`, `$upper(...)`: build an identifier.
 //!
 //! `$crate` passes through unchanged. Templates are parsed and type-checked against the
@@ -64,6 +65,7 @@ enum Node {
     Value(Path),
     For {
         var: String,
+        path: Path,
         body: Vec<Node>,
     },
     IfLet {
@@ -105,9 +107,30 @@ enum Ty<'a> {
         ident_like: bool,
     },
     Optional(&'a Shape),
+    /// `$decl`: the declaration's built-ins, its fields, and `members`.
+    Decl(&'a BodySpec),
     Block(&'a BodySpec),
+    /// A loop variable: the member's built-ins and its fields.
     Member(&'a BodySpec),
     Members,
+}
+
+/// Built-in values of a namespace, which its schema fields may not shadow.
+const DECL_BUILTINS: [&str; 5] = ["name", "vis", "doc", "attrs", "members"];
+const MEMBER_BUILTINS: [&str; 5] = ["name", "vis", "doc", "attrs", "index"];
+
+/// Names a loop or `$if let` variable may not take. (`$ident(...)` and its kin are
+/// constructs only when called, so `ident` remains a usable variable name.)
+const NOT_VARIABLES: [&str; 2] = ["decl", "crate"];
+
+impl Ty<'_> {
+    fn builtins(self) -> &'static [&'static str] {
+        match self {
+            Ty::Decl(_) => &DECL_BUILTINS,
+            Ty::Member(_) => &MEMBER_BUILTINS,
+            _ => &[],
+        }
+    }
 }
 
 struct Scope<'a> {
@@ -121,18 +144,29 @@ struct Parser<'a> {
     scopes: Vec<Scope<'a>>,
 }
 
-const RESERVED: [&str; 7] = ["name", "vis", "doc", "attrs", "members", "crate", "index"];
-
 impl Template {
     pub(crate) fn parse(tokens: TokenStream, body: &BodySpec, sigil: char) -> Result<Self> {
-        let member_fields = body.members.iter().flat_map(|members| &members.body.fields);
-        for field in body.fields.iter().chain(member_fields) {
+        let member_fields = body
+            .members
+            .iter()
+            .flat_map(|members| members.body.fields.iter().map(|field| (field, "member")));
+        for (field, namespace) in body
+            .fields
+            .iter()
+            .map(|field| (field, "decl"))
+            .chain(member_fields)
+        {
             let word = field.name.to_string();
-            if RESERVED.contains(&word.as_str()) {
+            let builtins: &[&str] = if namespace == "decl" {
+                &DECL_BUILTINS
+            } else {
+                &MEMBER_BUILTINS
+            };
+            if builtins.contains(&word.as_str()) {
                 return Err(Error::new(
                     field.name.span(),
                     format!(
-                        "field `{word}` collides with the template's built-in `${word}`; rename the field"
+                        "field `{word}` collides with the template's built-in `${namespace}.{word}`; rename the field"
                     ),
                 ));
             }
@@ -222,7 +256,14 @@ impl<'a> Parser<'a> {
                     )),
                     Ty::Members => Err(path_error(
                         &path,
-                        "is the member list; loop over it with `$for member in $members { ... }`",
+                        "is the member list; loop over it with `$for member in $decl.members { ... }`",
+                    )),
+                    Ty::Decl(body) => Err(path_error(
+                        &path,
+                        &format!(
+                            "is the declaration, not a value; name one of {}",
+                            field_list(ty.builtins(), body)
+                        ),
                     )),
                     Ty::Block(_) | Ty::Member(_) => Err(path_error(
                         &path,
@@ -233,17 +274,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `$for VAR in $members { BODY }`.
+    /// `$for VAR in $decl.members { BODY }`.
     fn for_node(&mut self, keyword: &Ident, tokens: &mut Tokens) -> Result<Node> {
         let var = expect_ident(tokens, keyword.span(), "a loop variable after `$for`")?;
         expect_word(tokens, var.span(), "in")?;
         expect_sigil(tokens, self.sigil, var.span())?;
-        let root = expect_ident(tokens, var.span(), "`$members` after `in`")?;
+        let root = expect_ident(tokens, var.span(), "`$decl.members` after `in`")?;
         let (path, ty) = self.path(root, tokens)?;
         let (Ty::Members, Some(members)) = (ty, &self.body.members) else {
             return Err(path_error(
                 &path,
-                "is not the member list; loop over `$members`",
+                "is not the member list; loop over `$decl.members`",
             ));
         };
         let body = expect_group(tokens, var.span(), Delimiter::Brace, "`{ ... }`")?;
@@ -256,6 +297,7 @@ impl<'a> Parser<'a> {
         self.scopes.pop();
         Ok(Node::For {
             var: var.to_string(),
+            path,
             body: body?,
         })
     }
@@ -324,7 +366,7 @@ impl<'a> Parser<'a> {
                     let Ty::Leaf { ident_like: true } = ty else {
                         return Err(path_error(
                             &path,
-                            "is not an identifier; identifier parts must be `ident` fields, `$name`, or `$member.index`",
+                            "is not an identifier; identifier parts must be `ident` fields, `$decl.name`, `$member.name`, or `$member.index`",
                         ));
                     };
                     parts.push(Part::Value(path));
@@ -367,8 +409,7 @@ impl<'a> Parser<'a> {
     fn path(&self, root: Ident, tokens: &mut Tokens) -> Result<(Path, Ty<'a>)> {
         let mut ty = self.root_ty(&root)?;
         let mut fields = Vec::new();
-        while let Ty::Block(body) | Ty::Member(body) = ty {
-            let is_member = matches!(ty, Ty::Member(_));
+        while let Ty::Decl(body) | Ty::Block(body) | Ty::Member(body) = ty {
             let mut lookahead = tokens.clone();
             let (Some(TokenTree::Punct(dot)), Some(TokenTree::Ident(field))) =
                 (lookahead.next(), lookahead.next())
@@ -380,81 +421,67 @@ impl<'a> Parser<'a> {
             }
             tokens.next();
             tokens.next();
-            ty = match field.to_string().as_str() {
-                "name" | "index" if is_member => Ty::Leaf { ident_like: true },
-                "vis" | "doc" | "attrs" if is_member => Ty::Leaf { ident_like: false },
-                _ => match body.field(&field) {
+            let word = field.to_string();
+            ty = match word.as_str() {
+                builtin if !ty.builtins().contains(&builtin) => match body.field(&field) {
                     Some(spec) => shape_ty(spec.optional, &spec.shape),
                     None => {
                         return Err(Error::new(
                             field.span(),
                             format!(
-                                "no field `{field}` here; expected one of {}",
-                                field_list(body, is_member)
+                                "no value `{field}` here; expected one of {}",
+                                field_list(ty.builtins(), body)
                             ),
                         ));
                     }
                 },
+                "name" | "index" => Ty::Leaf { ident_like: true },
+                "members" => Ty::Members,
+                _ => Ty::Leaf { ident_like: false },
             };
             fields.push(field);
         }
         Ok((Path { root, fields }, ty))
     }
 
+    /// A path starts at `$decl` or at a `$for` / `$if let` variable in scope.
     fn root_ty(&self, root: &Ident) -> Result<Ty<'a>> {
         let word = root.to_string();
         if let Some(scope) = self.scopes.iter().rev().find(|scope| scope.name == word) {
             return Ok(scope.ty);
         }
-        Ok(match word.as_str() {
-            "name" => Ty::Leaf { ident_like: true },
-            "vis" | "doc" | "attrs" => Ty::Leaf { ident_like: false },
-            "members" if self.body.members.is_some() => Ty::Members,
-            _ => match self.body.field(root) {
-                Some(spec) => shape_ty(spec.optional, &spec.shape),
-                None => {
-                    return Err(Error::new(
-                        root.span(),
-                        format!(
-                            "unknown template value `${word}`; expected one of {}",
-                            self.top_list()
-                        ),
-                    ));
-                }
-            },
-        })
+        if word == "decl" {
+            return Ok(Ty::Decl(self.body));
+        }
+        let decl = Ty::Decl(self.body);
+        let hint = if decl.builtins().contains(&word.as_str()) || self.body.field(root).is_some() {
+            format!("write `$decl.{word}`")
+        } else {
+            let mut names = vec!["`$decl`".to_owned()];
+            names.extend(self.scopes.iter().map(|scope| format!("`${}`", scope.name)));
+            format!("expected {}", names.join(", "))
+        };
+        Err(Error::new(
+            root.span(),
+            format!("unknown template value `${word}`; {hint}"),
+        ))
     }
 
     fn check_new_name(&self, var: &Ident) -> Result<()> {
         let word = var.to_string();
-        if RESERVED.contains(&word.as_str())
-            || self.body.field(var).is_some()
-            || self.scopes.iter().any(|scope| scope.name == word)
-        {
+        if NOT_VARIABLES.contains(&word.as_str()) {
             return Err(Error::new(
                 var.span(),
-                format!("`{word}` is already a template value; choose another name"),
+                format!("`{word}` is reserved in templates; choose another variable name"),
+            ));
+        }
+        if self.scopes.iter().any(|scope| scope.name == word) {
+            return Err(Error::new(
+                var.span(),
+                format!("`${word}` is already in scope; choose another variable name"),
             ));
         }
         Ok(())
-    }
-
-    fn top_list(&self) -> String {
-        let mut names: Vec<String> = ["name", "vis", "doc", "attrs"]
-            .iter()
-            .map(|name| format!("`${name}`"))
-            .collect();
-        if self.body.members.is_some() {
-            names.push("`$members`".to_owned());
-        }
-        names.extend(
-            self.body
-                .fields
-                .iter()
-                .map(|field| format!("`${}`", field.name)),
-        );
-        names.extend(self.scopes.iter().map(|scope| format!("`${}`", scope.name)));
-        names.join(", ")
     }
 }
 
@@ -468,17 +495,14 @@ fn shape_ty(optional: bool, shape: &Shape) -> Ty<'_> {
     }
 }
 
-fn field_list(body: &BodySpec, is_member: bool) -> String {
-    let mut names: Vec<String> = Vec::new();
-    if is_member {
-        names.extend(
-            ["name", "vis", "doc", "attrs", "index"]
-                .iter()
-                .map(|name| format!("`{name}`")),
-        );
-    }
-    names.extend(body.fields.iter().map(|field| format!("`{}`", field.name)));
-    names.join(", ")
+fn field_list(builtins: &[&str], body: &BodySpec) -> String {
+    builtins
+        .iter()
+        .filter(|&&name| name != "members" || body.members.is_some())
+        .map(|name| format!("`{name}`"))
+        .chain(body.fields.iter().map(|field| format!("`{}`", field.name)))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn path_error(path: &Path, message: &str) -> Error {
@@ -554,7 +578,7 @@ fn lookup<'d>(root: &'d Data, env: &[(String, &'d Data)], path: &Path) -> Option
     let name = path.root.to_string();
     let mut data = match env.iter().rev().find(|(scope, _)| *scope == name) {
         Some((_, data)) => *data,
-        None => root.get(&name)?,
+        None => root,
     };
     for field in &path.fields {
         data = data.get(&field.to_string())?;
@@ -583,8 +607,8 @@ fn render_nodes<'d>(
                     output.extend(tokens.clone());
                 }
             }
-            Node::For { var, body } => {
-                if let Some(Data::Members(members)) = root.get("members") {
+            Node::For { var, path, body } => {
+                if let Some(Data::Members(members)) = lookup(root, env, path) {
                     for member in members {
                         env.push((var.clone(), member));
                         render_nodes(body, root, env, output);

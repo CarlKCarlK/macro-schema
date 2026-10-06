@@ -34,17 +34,17 @@ const_structures::define! {
     }
 
     generate {
-        $attrs
-        #[doc = $doc]
-        $vis struct $name;
+        $decl.attrs
+        #[doc = $decl.doc]
+        $decl.vis struct $decl.name;
 
-        impl $name {
-            pub const ADDRESS: &'static str = stringify!($address);
-            pub const ENABLED: bool = $enabled;
-            pub const MEMBER_COUNT: usize = 0 $for channel in $members { + 1 };
+        impl $decl.name {
+            pub const ADDRESS: &'static str = stringify!($decl.address);
+            pub const ENABLED: bool = $decl.enabled;
+            pub const MEMBER_COUNT: usize = 0 $for channel in $decl.members { + 1 };
         }
 
-        $for channel in $members {
+        $for channel in $decl.members {
             $channel.attrs
             #[doc = $channel.doc]
             $channel.vis struct $channel.name;

@@ -28,13 +28,13 @@ pub mod widgets {
         }
 
         generate {
-            $attrs
-            #[doc = $doc]
-            $vis struct $name;
+            $decl.attrs
+            #[doc = $decl.doc]
+            $decl.vis struct $decl.name;
 
-            impl $name {
+            impl $decl.name {
                 /// Configured size.
-                pub const SIZE: u32 = $size;
+                pub const SIZE: u32 = $decl.size;
                 /// Default from the defining library, even when renamed downstream.
                 pub const DEFAULT_SIZE: u32 = $crate::DEFAULT_WIDGET_SIZE;
             }
@@ -53,15 +53,15 @@ pub mod widgets {
     const_structures::define! {
         pub item { size: expr }
         generate {
-            $vis struct $name;
-            impl $name { pub const SIZE: u32 = $size; }
+            $decl.vis struct $decl.name;
+            impl $decl.name { pub const SIZE: u32 = $decl.size; }
         }
     }
     const_structures::define! {
         pub item_generate_impl { size: expr }
         generate {
-            $vis struct $name;
-            impl $name { pub const SIZE: u32 = $size; }
+            $decl.vis struct $decl.name;
+            impl $decl.name { pub const SIZE: u32 = $decl.size; }
         }
     }
 

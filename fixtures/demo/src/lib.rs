@@ -168,22 +168,22 @@ pub mod records {
         }
 
         generate {
-            $attrs
-            #[doc = $doc]
-            $vis struct $name;
+            $decl.attrs
+            #[doc = $decl.doc]
+            $decl.vis struct $decl.name;
 
-            impl $name {
-                pub const LABEL: &'static str = $label;
-                pub const RANGE: ($output, $output) = ($range.min, $range.max);
-                pub const VALUE: Option<i32> = $if let Some(initial) = $value {
+            impl $decl.name {
+                pub const LABEL: &'static str = $decl.label;
+                pub const RANGE: ($decl.output, $decl.output) = ($decl.range.min, $decl.range.max);
+                pub const VALUE: Option<i32> = $if let Some(initial) = $decl.value {
                     Some($initial)
                 } else {
                     None
                 };
-                pub const MEMBER_COUNT: usize = 0 $for record in $members { + 1 };
+                pub const MEMBER_COUNT: usize = 0 $for record in $decl.members { + 1 };
             }
 
-            $for record in $members {
+            $for record in $decl.members {
                 $record.attrs
                 #[doc = $record.doc]
                 $record.vis struct $record.name;

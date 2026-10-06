@@ -600,9 +600,10 @@ fn instance_doc(
     declaration: &Declaration,
     fields: &[Resolved],
 ) -> Result<String> {
-    let has_written_doc = declaration.attrs.iter().any(|attr| {
-        attr.path().is_ident("doc") && matches!(attr.meta, syn::Meta::NameValue(_))
-    });
+    let has_written_doc = declaration
+        .attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("doc") && matches!(attr.meta, syn::Meta::NameValue(_)));
     if has_written_doc {
         return Ok(String::new());
     }

@@ -1,4 +1,4 @@
-error: no field `pni` here; expected one of `name`, `vis`, `doc`, `attrs`, `index`, `pin`
+error: no value `pni` here; expected one of `name`, `vis`, `doc`, `attrs`, `index`, `pin`
   --> tests/ui/template_typo.rs:14:47
    |
 14 |             const _: &str = stringify!($strip.pni);

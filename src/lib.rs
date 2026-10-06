@@ -6,21 +6,35 @@
 //! description come parsing, validation, defaulting, error messages, and rustdoc.
 //! The template is ordinary Rust tokens plus four constructs:
 //!
-//! - `$name`, `$vis` (`pub(self)` when none was written), `$doc`, `$attrs`, and each top-level field (`$enabled`)
-//!   substitute the declaration's values; a nested field is `$range.min`.
-//! - `$for member in $members { ... }` repeats per member; inside, use
-//!   `$member.name`, `$member.vis`, `$member.doc`, `$member.attrs`,
-//!   `$member.index`, and its fields (`$member.pin`).
-//! - `$if let Some(x) = $optional { ... } else { ... }` reads an optional field or block.
+//! - `$decl.VALUE` substitutes a value of the declaration: its built-ins
+//!   `$decl.name`, `$decl.vis` (`pub(self)` when none was written), `$decl.doc`, and
+//!   `$decl.attrs`, or a schema field (`$decl.enabled`; nested, `$decl.range.min`).
+//! - `$for member in $decl.members { ... }` repeats per member; inside, the loop
+//!   variable reaches the member's built-ins `$member.name`, `$member.vis`,
+//!   `$member.doc`, `$member.attrs`, and `$member.index`, and its fields
+//!   (`$member.pin`).
+//! - `$if let Some(x) = $decl.optional { ... } else { ... }` reads an optional field
+//!   or block through `$x`.
 //! - `$ident(a, b, ...)` concatenates identifier parts exactly; `$snake(...)` and
 //!   `$upper(...)` concatenate and then convert to `snake_case` or
 //!   `SCREAMING_SNAKE_CASE`. Parts are identifiers, integers, `ident` fields,
-//!   `$name`, or `$member.index`.
+//!   `$decl.name`, `$member.name`, or `$member.index`.
 //!
-//! `$crate` refers to the defining library. Templates are type-checked against the
-//! schema when [`define!`] runs, so an unknown value, a missing field, or an optional
-//! read without `$if let` is reported at the template. Field names `name`, `vis`,
-//! `doc`, `attrs`, `members`, and `index` are reserved for these built-ins.
+//! Everything belonging to the declaration is reached through `$decl`; everything
+//! belonging to a loop or `$if let` variable, through that variable. `$crate` refers
+//! to the defining library. Templates are type-checked against the schema when
+//! [`define!`] runs, so an unknown value, a missing field, or an optional read without
+//! `$if let` is reported at the template. A schema field may not reuse a built-in name
+//! of its namespace (`name`, `vis`, `doc`, `attrs`, `members` at the top level;
+//! `name`, `vis`, `doc`, `attrs`, `index` in a member), and a variable may not be named
+//! `decl` or `crate`.
+//!
+//! `$decl.doc` and `$member.doc` hold a generated description of the instance (its
+//! macro, group, and field values), meant for `#[doc = $decl.doc]` after
+//! `$decl.attrs`. If the caller writes their own doc text (`///` or
+//! `#[doc = "..."]`) on that declaration or member, it arrives through `attrs` and the
+//! generated doc is empty, so the caller's text replaces it rather than being appended
+//! to. `#[doc(hidden)]` and other `doc(...)` attributes don't count as doc text.
 //!
 //! The library must re-export [`expand!`] at its crate root under this exact name:
 //!
@@ -42,11 +56,11 @@
 //!     }
 //!
 //!     generate {
-//!         $attrs
-//!         #[doc = $doc]
-//!         $vis struct $name;
-//!         impl $name {
-//!             pub const ENABLED: bool = $enabled;
+//!         $decl.attrs
+//!         #[doc = $decl.doc]
+//!         $decl.vis struct $decl.name;
+//!         impl $decl.name {
+//!             pub const ENABLED: bool = $decl.enabled;
 //!         }
 //!     }
 //! }

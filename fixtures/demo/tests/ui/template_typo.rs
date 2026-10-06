@@ -10,7 +10,7 @@ const_structures::define! {
         },
     }
     generate {
-        $for strip in $members {
+        $for strip in $decl.members {
             const _: &str = stringify!($strip.pni);
         }
     }
