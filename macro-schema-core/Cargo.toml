@@ -1,16 +1,17 @@
 [package]
-name = "const-structures-core"
-description = "proc_macro2-based implementation of const-structures, debuggable with ordinary tests."
+name = "macro-schema-core"
+description = "The implementation of macro-schema over proc_macro2, testable without the compiler's macro expander."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 readme = "README.md"
-keywords = ["const", "configuration", "proc-macro"]
+keywords = ["macro", "schema", "template", "declaration", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers"]
-documentation = "https://docs.rs/const-structures-core"
+documentation = "https://docs.rs/macro-schema-core"
 exclude = ["Cargo.lock"]
-# TODO0 Add the canonical repository URL and homepage before publishing.
 
 [dependencies]
 proc-macro2.workspace = true

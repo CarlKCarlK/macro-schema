@@ -425,7 +425,7 @@ impl FieldAttrs {
     }
 }
 
-/// Implements `const_structures::define!`: parses and checks a definition, then emits
+/// Implements `macro_schema::define!`: parses and checks a definition, then emits
 /// a hidden exported `macro_rules!` wrapper plus a bare-name `use` alias.
 ///
 /// The alias must name the wrapper without a `crate::` path: rustc rejects
@@ -443,7 +443,7 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
     } = syn::parse2(input)?;
     let doc = macro_doc(&name, &body)?;
     let macro_name = name.to_string();
-    let wrapper = format_ident!("__const_structures_wrapper_{}", name);
+    let wrapper = format_ident!("__macro_schema_wrapper_{}", name);
     let shared_attrs = attrs.iter().filter(|attr| !attr.path().is_ident("doc"));
     let output = match output {
         DefinitionOutput::Generator(generator) => quote!(generator: { $crate::#generator }),
@@ -463,7 +463,7 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
         #[macro_export]
         macro_rules! #wrapper {
             ($($input:tt)*) => {
-                $crate::__const_structures_expand! {
+                $crate::__macro_schema_expand! {
                     macro_name: #macro_name,
                     #output,
                     schema: { #body_tokens },

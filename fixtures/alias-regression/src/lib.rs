@@ -11,7 +11,7 @@
 #![deny(warnings)]
 
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 
 /// Default widget size, used from both the schema and its generated backend.
 pub const DEFAULT_WIDGET_SIZE: u32 = 1;
@@ -19,7 +19,7 @@ pub const DEFAULT_WIDGET_SIZE: u32 = 1;
 pub mod widgets {
     //! Declares the macro in a module.
 
-    const_structures::define! {
+    macro_schema::define! {
         /// Declares a widget.
         pub widget {
             /// Widget size.
@@ -43,21 +43,21 @@ pub mod widgets {
 
     // A disabled definition with the same names detects missing cfg propagation
     // on either generated macro or either bare-name alias.
-    const_structures::define! {
+    macro_schema::define! {
         #[cfg(any())]
         pub widget { size: expr }
         generate { compile_error!("disabled definition must be absent"); }
     }
 
     // Distinct public names must not collide between internal wrapper names.
-    const_structures::define! {
+    macro_schema::define! {
         pub item { size: expr }
         generate {
             $decl.vis struct $decl.name;
             impl $decl.name { pub const SIZE: u32 = $decl.size; }
         }
     }
-    const_structures::define! {
+    macro_schema::define! {
         pub item_generate_impl { size: expr }
         generate {
             $decl.vis struct $decl.name;

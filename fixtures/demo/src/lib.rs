@@ -3,7 +3,7 @@
 #![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 
 /// Default debounce interval, reached from a schema default through `$crate`.
 pub const DEFAULT_DEBOUNCE_MS: u32 = 20;
@@ -11,7 +11,7 @@ pub const DEFAULT_DEBOUNCE_MS: u32 = 20;
 pub mod button {
     //! Button support.
 
-    const_structures::define! {
+    macro_schema::define! {
         /// Watches a button in a background task.
         ///
         /// ```rust,no_run
@@ -51,7 +51,7 @@ macro_rules! internal_via_another_macro {
 }
 internal_via_another_macro!();
 
-const_structures::define! {
+macro_schema::define! {
     /// Groups strips that share a bus.
     pub strips => __strips_generate {
         /// Shared bus.
@@ -145,7 +145,7 @@ macro_rules! __button_watch_generate {
 
 /// A domain-neutral template with typed values and nested optional members.
 pub mod records {
-    const_structures::define! {
+    macro_schema::define! {
         /// Declares a typed record range and its members, rendered by a template.
         pub records {
             /// Label.
@@ -220,7 +220,7 @@ pub mod precedence {
     }
     pub(crate) use forward_expr;
 
-    const_structures::define! {
+    macro_schema::define! {
         /// Substitutes expression fields into operator, array, generic, and macro positions.
         pub scaled {
             /// An integer expression.

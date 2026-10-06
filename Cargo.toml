@@ -1,8 +1,8 @@
 [workspace]
 members = [
     ".",
-    "const-structures-derive",
-    "const-structures-core",
+    "macro-schema-derive",
+    "macro-schema-core",
     "fixtures/demo",
     "fixtures/renamed-user",
     "fixtures/alias-regression",
@@ -13,10 +13,12 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/CarlKCarlK/macro-schema"
+homepage = "https://github.com/CarlKCarlK/macro-schema"
 
 [workspace.dependencies]
-const-structures-core = { version = "0.1.0", path = "const-structures-core" }
-const-structures-derive = { version = "0.1.0", path = "const-structures-derive" }
+macro-schema-core = { version = "0.1.0", path = "macro-schema-core" }
+macro-schema-derive = { version = "0.1.0", path = "macro-schema-derive" }
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
 syn = { version = "3.0.6", features = ["full", "extra-traits"] }
@@ -25,18 +27,19 @@ pretty_assertions = "1.4.1"
 trybuild = "1.0.121"
 
 [package]
-name = "const-structures"
-description = "Named-field, schema-checked declarations of compile-time constant structures."
+name = "macro-schema"
+description = "Define Rust declaration macros from a schema, which sets their syntax, and a template, which sets their output."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 readme = "README.md"
-keywords = ["const", "configuration", "proc-macro", "schema"]
+keywords = ["macro", "schema", "template", "declaration", "codegen"]
 categories = ["development-tools::procedural-macro-helpers", "no-std"]
-documentation = "https://docs.rs/const-structures"
+documentation = "https://docs.rs/macro-schema"
 exclude = ["AGENTS.md", "CLAUDE.md", "Cargo.lock", "specs/**", "fixtures/**", "target/**", "wip/**", "tests/readme.rs"]
-# TODO0 Add the canonical repository URL and homepage before publishing.
 
 [dependencies]
-const-structures-derive.workspace = true
+macro-schema-derive.workspace = true

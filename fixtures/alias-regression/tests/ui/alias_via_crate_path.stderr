@@ -1,19 +1,19 @@
 error: cannot determine resolution for the import
   --> tests/ui/alias_via_crate_path.rs:14:9
    |
-14 | pub use crate::__const_structures_wrapper_widget as widget_by_crate_path;
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 | pub use crate::__macro_schema_wrapper_widget as widget_by_crate_path;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: macro-expanded `macro_export` macros from the current crate cannot be referred to by absolute paths
   --> tests/ui/alias_via_crate_path.rs:14:9
    |
-14 | pub use crate::__const_structures_wrapper_widget as widget_by_crate_path;
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 | pub use crate::__macro_schema_wrapper_widget as widget_by_crate_path;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
 note: the macro is defined here
   --> tests/ui/alias_via_crate_path.rs:7:5
    |
- 7 | /     const_structures::define! {
+ 7 | /     macro_schema::define! {
  8 | |         pub widget => __widget_generate {
  9 | |             size: expr = 1,
 10 | |         }
@@ -22,7 +22,7 @@ note: the macro is defined here
    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!
    = note: for more information, see issue #52234 <https://github.com/rust-lang/rust/issues/52234>
    = note: `#[deny(macro_expanded_macro_exports_accessed_by_absolute_paths)]` (part of `#[deny(future_incompatible)]`) on by default
-   = note: this error originates in the macro `const_structures::define` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `macro_schema::define` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unused import: `widget`
  --> tests/ui/alias_via_crate_path.rs:8:13

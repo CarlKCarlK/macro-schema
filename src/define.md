@@ -4,7 +4,7 @@ This is the complete reference. For an introduction with a full program, see
 the [crate documentation](crate), which starts with a quick start.
 
 ```text
-const_structures::define! {
+macro_schema::define! {
     {ATTRIBUTE}
     VISIBILITY NAME {
         SCHEMA
@@ -28,10 +28,10 @@ its crate root, under exactly this name:
 
 ```text
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 ```
 
-Every generated macro calls `$crate::__const_structures_expand!`, so the name
+Every generated macro calls `$crate::__macro_schema_expand!`, so the name
 and location are fixed.
 
 # The defined macro
@@ -42,9 +42,9 @@ other item:
 
 ```rust
 # #[doc(hidden)]
-# pub use const_structures::expand as __const_structures_expand;
+# pub use macro_schema::expand as __macro_schema_expand;
 pub mod flags {
-    const_structures::define! {
+    macro_schema::define! {
         /// Declares a flag type.
         pub flag {
             /// Whether the flag starts on.
@@ -263,8 +263,8 @@ parameter list, a match, or an expression:
 
 ```rust
 # #[doc(hidden)]
-# pub use const_structures::expand as __const_structures_expand;
-const_structures::define! {
+# pub use macro_schema::expand as __macro_schema_expand;
+macro_schema::define! {
     /// Declares a group of channels.
     pub channels {
         members 1..=4 {
@@ -320,8 +320,8 @@ is an error.
 
 ```rust
 # #[doc(hidden)]
-# pub use const_structures::expand as __const_structures_expand;
-const_structures::define! {
+# pub use macro_schema::expand as __macro_schema_expand;
+macro_schema::define! {
     /// Declares a bounded value.
     pub bounded {
         /// Accepted range; unbounded when omitted.
@@ -389,11 +389,11 @@ checked by the crate's tests:
 
 ```rust
 # #[doc(hidden)]
-# pub use const_structures::expand as __const_structures_expand;
+# pub use macro_schema::expand as __macro_schema_expand;
 pub mod counting {
     pub use std::sync::atomic::{AtomicU32, Ordering};
 
-    const_structures::define! {
+    macro_schema::define! {
         /// Declares a named event counter.
         pub counter {
             /// How much each event adds.
@@ -536,7 +536,7 @@ When a template can't express the output, write `=> GENERATOR` instead of a
 
 ```rust
 # #[doc(hidden)]
-# pub use const_structures::expand as __const_structures_expand;
+# pub use macro_schema::expand as __macro_schema_expand;
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __flag_generate {
@@ -563,7 +563,7 @@ macro_rules! __flag_generate {
     };
 }
 
-const_structures::define! {
+macro_schema::define! {
     /// Declares a flag type.
     pub flag => __flag_generate {
         /// Whether the flag starts on.

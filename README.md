@@ -1,19 +1,8 @@
-# const-structures
+# macro-schema
 
-<!-- TODO0 Once the repository URL is settled, link the file paths in this README (examples, spec, licenses) with absolute URLs, which work on GitHub, crates.io, and docs.rs. -->
-
-`const-structures` lets a Rust library define *declaration macros*: macros
-whose callers write a named declaration with keyword fields, and that expand to
-new Rust items such as types, trait implementations, statics, and functions.
-
-The library author describes the macro in two parts. A **schema** says what
-input is legal. A **template** says what Rust code that input becomes. The
-crate supplies the rest: parsing, validation, defaults, error messages, and
-generated documentation.
-
-## The problem
-
-Say you want callers to write:
+`macro-schema` helps Rust library authors write *declaration macros*. A
+declaration macro lets the library's users write a named declaration with
+keyword fields, like this:
 
 ```text
 setting! {
@@ -21,8 +10,44 @@ setting! {
 }
 ```
 
-and get a new type `Port` that implements your library's `Setting` trait.
-Writing `setting!` by hand with `macro_rules!` means handling:
+and turns it into new Rust items: here, a type `Port` that implements the
+library's `Setting` trait.
+
+The author defines such a macro in two parts, which give the crate its name:
+
+- A **schema** defines the macro's syntax: its fields, the kind of each
+  (`ident`, `expr`, or `ty`), which are required, and their defaults.
+- A **template** defines the macro's output: the Rust code that each
+  declaration becomes.
+
+From those two parts, `macro-schema` builds the macro: parsing, validation,
+defaults, error messages that point at the caller's tokens, and generated
+documentation. The library exports the new macro like any other, and its users
+call it without depending on `macro-schema` themselves.
+
+## Why generate items?
+
+Most library APIs take values. Users fill in a struct, chain a builder, or pass
+arguments, and the library's already-compiled code handles every user the same
+way. Some libraries need more: each thing a user declares must become items of
+its own, such as:
+
+- a **type**, so that each declaration can have its own trait implementations,
+  associated constants, and an identity the compiler checks;
+- a **static**, for state with a fixed address that lives for the whole program;
+- **methods and functions** named after what the user declared;
+- a **task** or handler that a framework requires to be a concrete, non-generic
+  function.
+
+Values can't create items. A `const` struct can describe a configuration, but
+it can't declare a type or a static; a builder runs later still, at run time.
+Generics help only where the surrounding framework accepts generic items. When
+a library has to add items to its user's crate, it needs a macro.
+
+## The problem
+
+`macro_rules!` can generate items, but a declaration with named fields asks a
+lot of it. Writing `setting!` by hand with `macro_rules!` means handling:
 
 - named fields given in any order;
 - required fields, optional fields, and defaults;
@@ -34,11 +59,12 @@ Writing `setting!` by hand with `macro_rules!` means handling:
 
 Done with `macro_rules!`, this machinery is usually built from recursive
 "tt-muncher" rules. It is often far larger, and much harder to check, than the
-code the macro finally emits. In [Device Envoy](#real-world-use), hand-written
+code the macro finally emits. In [Device Envoy](#origin-device-envoy), hand-written
 declaration macros came to over 14,000 lines.
 
-With `const-structures`, you write the schema and the template, and that
-machinery comes from the crate.
+With `macro-schema`, you write the schema and the template, and that
+machinery comes from the crate. Both live in your library, next to the API they
+generate; you don't need a separate procedural-macro crate.
 
 ## When to use it
 
@@ -49,7 +75,7 @@ machinery comes from the crate.
 - For arbitrary transformations of Rust syntax, write a procedural macro.
 - For declarations that need named fields, defaults, nesting, or repeated
   members, and that must *generate items* (types, impls, statics, tasks),
-  consider `const-structures`.
+  consider `macro-schema`.
 
 What it deliberately does not do:
 
@@ -68,34 +94,34 @@ What it deliberately does not do:
 There are two roles:
 
 - The **library author** defines a declaration macro with
-  `const_structures::define!`.
+  `macro_schema::define!`.
 - The **library user** invokes that macro and gets ordinary Rust items.
 
-Only the library depends on `const-structures`:
+Only the library depends on `macro-schema`:
 
 ```toml
 [dependencies]
-const-structures = "0.1"
+macro-schema = "0.1"
 ```
 
 The library's users depend on the library alone; the macros it defines don't
-need `const-structures` in the user's `Cargo.toml`.
+need `macro-schema` in the user's `Cargo.toml`.
 
 Here both roles are in one file. The author defines `setting!` in the module
 `settings`; the user declares two settings and reads them from configuration
 text. In the template, `$decl.name`, `$decl.key`, and the other `$decl` values
 are filled in from each declaration; [the template language](#the-template-language)
-explains them. This is `examples/quick_start.rs` in the repository:
+explains them. This is [`examples/quick_start.rs`](https://github.com/CarlKCarlK/macro-schema/blob/main/examples/quick_start.rs) in the repository:
 
 ```rust
 // examples/quick_start.rs: run with `cargo run --example quick_start`.
 
 // ----- Library author: defines the `setting!` declaration macro -----
 
-// Every crate that defines macros with `const-structures` re-exports this once,
+// Every crate that defines macros with `macro-schema` re-exports this once,
 // at its crate root.
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 
 pub mod settings {
     /// A named configuration setting with a typed value.
@@ -118,7 +144,7 @@ pub mod settings {
         }
     }
 
-    const_structures::define! {
+    macro_schema::define! {
         /// Declares a configuration setting: a type that implements [`Setting`].
         pub setting {
             /// Key that identifies the setting, such as `"server.port"`.
@@ -341,7 +367,7 @@ The full rules for every construct are in the [`define!`] reference.
 
 ## A larger example
 
-`examples/commands.rs` defines `commands!`, which turns
+[`examples/commands.rs`](https://github.com/CarlKCarlK/macro-schema/blob/main/examples/commands.rs) defines `commands!`, which turns
 a list of commands into an enum with a parser, argument checking, help text,
 and a usage counter per command. A user writes:
 
@@ -465,13 +491,22 @@ The rule for combining this with the user's own documentation:
   page shows only "TCP port the server listens on."
 - `#[doc(hidden)]` alone is not doc text and doesn't replace anything.
 
-## Real-world use
+## Origin: Device Envoy
 
-[Device Envoy](https://github.com/CarlKCarlK/device-envoy), a Rust library for
-embedded devices, uses `const-structures` for 33 declaration macros (on its
-`proc-macro-const-structures` branch, not yet released), including
-its LED strip, LED panel, infrared, LCD, audio, button, and servo APIs. Moving
-to it:
+`macro-schema` came out of [Device Envoy](https://github.com/CarlKCarlK/device-envoy),
+a Rust library for embedded devices built on [Embassy](https://embassy.dev).
+Embassy tasks can't be generic, so a library can't provide one task definition
+that serves any number of LED strips or buttons. Device Envoy's macros instead
+generate a concrete task for each device the application declares, together
+with the statics and types that device needs. Application developers choose
+their devices, and how many of each, with no task-pool capacity fixed by the
+library.
+
+Those declaration macros were first written with `macro_rules!`, and they
+became hard to write and maintain. `macro-schema` was built to replace them.
+Device Envoy now defines 33 declaration macros with it (on its
+`proc-macro-const-structures` branch, not yet released), including its LED
+strip, LED panel, infrared, LCD, audio, button, and servo APIs. Moving to it:
 
 - replaced 14,188 lines of hand-written `macro_rules!` with 3,246 lines of
   `define!` blocks (schemas, templates, and their documentation) plus 1,912
@@ -484,6 +519,12 @@ to it:
 - put each schema beside the API it generates, instead of in a separate
   proc-macro crate.
 
+Embassy's task model is what made generated items necessary there; plenty of
+embedded programs are well served by ordinary structs and generics. And
+`macro-schema` itself has nothing to do with embedded Rust. It works for any
+library whose users declare things that must become items, and the examples in
+this README are ordinary `std` programs.
+
 ## Learn more
 
 - [`define!`] is the complete reference: schema syntax, every template
@@ -491,24 +532,24 @@ to it:
   output a template can't express.
 - [`expand!`] is the procedural macro that every generated macro calls. You
   re-export it once; you never call it yourself.
-- The repository's `examples/` directory has the two programs above.
-- `specs/CONST_STRUCTURES_SPEC.md`, in the repository, explains how the crate
-  works inside: how `define!` builds a macro
+- The repository's [`examples/`](https://github.com/CarlKCarlK/macro-schema/tree/main/examples) directory has the two programs above.
+- [`specs/MACRO_SCHEMA_SPEC.md`](https://github.com/CarlKCarlK/macro-schema/blob/main/specs/MACRO_SCHEMA_SPEC.md), in the
+  repository, explains how the crate works inside: how `define!` builds a macro
   that other crates can call, how `expand!` validates and renders, how spans
   are kept, and why the design is what it is.
 
 ## Crates
 
-- `const-structures`: the crate to depend on. It is `#![no_std]`, so `no_std`
+- `macro-schema`: the crate to depend on. It is `#![no_std]`, so `no_std`
   libraries can use it.
-- `const-structures-derive`: the procedural macro entry points.
-- `const-structures-core`: the implementation, as ordinary Rust over
+- `macro-schema-derive`: the procedural macro entry points.
+- `macro-schema-core`: the implementation, as ordinary Rust over
   `proc_macro2`, so it can be unit tested.
 
 ## License
 
-Licensed under either of the Apache License, Version 2.0 (`LICENSE-APACHE`) or
-the MIT license (`LICENSE-MIT`), at your option.
+Licensed under either of the Apache License, Version 2.0 ([`LICENSE-APACHE`](https://github.com/CarlKCarlK/macro-schema/blob/main/LICENSE-APACHE))
+or the MIT license ([`LICENSE-MIT`](https://github.com/CarlKCarlK/macro-schema/blob/main/LICENSE-MIT)), at your option.
 
-[`define!`]: src/define.md
-[`expand!`]: src/lib.rs
+[`define!`]: https://docs.rs/macro-schema/latest/macro_schema/macro.define.html
+[`expand!`]: https://docs.rs/macro-schema/latest/macro_schema/macro.expand.html

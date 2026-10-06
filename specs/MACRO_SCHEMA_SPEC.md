@@ -1,10 +1,14 @@
-# const-structures Specification
+# macro-schema Specification
 
 <!-- TODO0 consider deleting this spec once the work below is implemented and released. (may no longer apply: this is now the authoritative description of the implementation) -->
 
-This document is for contributors. It explains how `const-structures` works
+This document is for contributors. It explains how `macro-schema` works
 inside and why it is designed the way it is. Where this document and the code
 disagree, the code is right and this document has a bug.
+
+The crate was developed under the name `const-structures` and renamed
+`macro-schema` before its first release. Older commits, and Device Envoy's
+`proc-macro-const-structures` branch, still use the old name.
 
 To *use* the crate, start elsewhere:
 
@@ -48,9 +52,9 @@ and a template. The framework supplies everything else.
 ## Crates
 
 ```text
-const-structures            facade (#![no_std]): re-exports the two proc macros; holds the user docs
-const-structures-derive     proc-macro shim: converts TokenStreams and errors, nothing else
-const-structures-core       the implementation, over proc_macro2, unit-testable
+macro-schema            facade (#![no_std]): re-exports the two proc macros; holds the user docs
+macro-schema-derive     proc-macro shim: converts TokenStreams and errors, nothing else
+macro-schema-core       the implementation, over proc_macro2, unit-testable
     schema.rs               define!: parse a definition, generate macro docs, emit the wrapper and alias
     instance.rs             expand!: parse a call, validate, fill defaults, build instance docs, dispatch
     template.rs             the template language: parse and type-check, embed, render
@@ -59,7 +63,7 @@ const-structures-core       the implementation, over proc_macro2, unit-testable
 ```
 
 The facade is `#![no_std]` so that embedded `no_std` libraries can depend on
-it. Everything is implemented in `const-structures-core` as ordinary functions
+it. Everything is implemented in `macro-schema-core` as ordinary functions
 from `proc_macro2::TokenStream` to `syn::Result<TokenStream>`, so it can be
 unit tested and debugged without the compiler's macro expander. The derive
 crate turns an `Err` into `compile_error!` with `syn::Error::into_compile_error`.
@@ -71,7 +75,7 @@ crate turns an `Err` into `compile_error!` with `syn::Error::into_compile_error`
 For
 
 ```text
-const_structures::define! {
+macro_schema::define! {
     /// Hand-written docs.
     pub indicators { /* schema */ }
     generate { /* template */ }
@@ -84,9 +88,9 @@ const_structures::define! {
 #[doc = "<generated Syntax block and field tables>"]
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __const_structures_wrapper_indicators {
+macro_rules! __macro_schema_wrapper_indicators {
     ($($input:tt)*) => {
-        $crate::__const_structures_expand! {
+        $crate::__macro_schema_expand! {
             macro_name: "indicators",
             template: { <the template, with `$` re-marked as `#`> },
             schema: { <the schema body tokens> },
@@ -97,7 +101,7 @@ macro_rules! __const_structures_wrapper_indicators {
 
 <the define!'s own attributes, including its hand-written docs>
 #[doc(inline)]
-pub use __const_structures_wrapper_indicators as indicators;
+pub use __macro_schema_wrapper_indicators as indicators;
 ```
 
 - **Why a generated `macro_rules!`.** A proc macro must live in a proc-macro
@@ -130,8 +134,8 @@ pub use __const_structures_wrapper_indicators as indicators;
 rustc rejects absolute-path access to a `#[macro_export]` macro that was itself
 produced by macro expansion (`macro_expanded_macro_exports_accessed_by_absolute_paths`,
 deny-by-default and slated to become a hard error). A
-`pub use crate::__const_structures_wrapper_NAME` would trigger it. A bare
-`pub use __const_structures_wrapper_NAME as NAME;` in the same expansion
+`pub use crate::__macro_schema_wrapper_NAME` would trigger it. A bare
+`pub use __macro_schema_wrapper_NAME as NAME;` in the same expansion
 re-exports the macro from textual scope instead, which gives it an ordinary
 path. Other modules and crates then reach the macro through that alias:
 `crate::indicator::indicators`, a crate-root `pub use indicator::indicators;`,
@@ -146,14 +150,14 @@ client to keep its schemas in a separate proc-macro crate (Device Envoy had a
 ### `$crate`
 
 Every reference the generated code makes to the client goes through `$crate`:
-the wrapper calls `$crate::__const_structures_expand!`, templates write
+the wrapper calls `$crate::__macro_schema_expand!`, templates write
 `$crate::...`, and schema defaults may too. `$crate` survives because the
 template and schema tokens are embedded in the client's own `macro_rules!`
 wrapper, where `$crate` means the client crate. So a client still works when a
 user renames it in `Cargo.toml`. (`define!` itself reads `$crate` in a default
 as `crate` while validating and documenting, in `dollar_crate_as_crate`; the
 wrapper keeps the original tokens.) That is also why each client must re-export
-`expand!` at its crate root under the fixed name `__const_structures_expand`.
+`expand!` at its crate root under the fixed name `__macro_schema_expand`.
 
 ## How a call is expanded
 
@@ -332,7 +336,7 @@ doctest.
 
 ## Testing
 
-- `const-structures-core` unit tests cover parsing, defaults, members, generated
+- `macro-schema-core` unit tests cover parsing, defaults, members, generated
   docs, template rendering and type-checking, expression parenthesization,
   embedding, snake case, and the written-doc rule.
 - The facade's doctests run every Rust example in `README.md` and
@@ -350,7 +354,7 @@ doctest.
   renamed dependency. The alias fixture also builds rustdoc and checks the
   alias page and the generated field docs. Its UI control
   `alias_via_crate_path` must fail specifically when an alias refers to
-  `crate::__const_structures_wrapper_widget`.
+  `crate::__macro_schema_wrapper_widget`.
 - `cargo run --example quick_start` and `cargo run --example commands` run the
   examples, which assert their own results.
 

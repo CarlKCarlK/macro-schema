@@ -2,10 +2,10 @@
 
 // ----- Library author: defines the `setting!` declaration macro -----
 
-// Every crate that defines macros with `const-structures` re-exports this once,
+// Every crate that defines macros with `macro-schema` re-exports this once,
 // at its crate root.
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 
 pub mod settings {
     /// A named configuration setting with a typed value.
@@ -28,7 +28,7 @@ pub mod settings {
         }
     }
 
-    const_structures::define! {
+    macro_schema::define! {
         /// Declares a configuration setting: a type that implements [`Setting`].
         pub setting {
             /// Key that identifies the setting, such as `"server.port"`.

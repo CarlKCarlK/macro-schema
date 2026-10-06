@@ -1,9 +1,9 @@
 // A typo in a template is reported at the library's `generate` block when `define!`
 // runs, not later at some caller.
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 
-const_structures::define! {
+macro_schema::define! {
     pub strips {
         members 1.. {
             pin: ident,

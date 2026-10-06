@@ -6,10 +6,10 @@
 // ----- Library author: defines the `commands!` declaration macro -----
 
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 
 pub mod cli {
-    const_structures::define! {
+    macro_schema::define! {
         /// Declares the commands of a command-line tool as an enum.
         ///
         /// Each member becomes a variant. Its command word is the variant name in

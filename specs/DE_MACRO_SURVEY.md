@@ -3,13 +3,13 @@
 <!-- TODO0 consider deleting this survey once the migration has shipped and the historical baseline is no longer useful. -->
 
 This document records how Device Envoy's declaration macros moved to
-`const-structures`. It covers what exists now, what changed against the
+`macro-schema`. It covers what exists now, what changed against the
 pre-migration baseline, the bugs the migration uncovered, and which macros were
 intentionally left as hand-written `macro_rules!`.
 
 - The framework's language reference is `src/define.md` (the rustdoc of
   `define!`); its architecture and design rationale are in
-  [CONST_STRUCTURES_SPEC.md](CONST_STRUCTURES_SPEC.md).
+  [MACRO_SCHEMA_SPEC.md](MACRO_SCHEMA_SPEC.md).
 - Sections marked **Historical** describe Device Envoy as it was at the
   baseline, `main` at `4c1ee16f`. They are kept for comparison and do not
   describe current behavior.
@@ -29,7 +29,7 @@ intentionally left as hand-written `macro_rules!`.
 | Macro source in `crates/*/src` | 14,188 lines in `macro_rules!` | 1,912 lines in `macro_rules!` plus 3,246 lines in `define!` blocks |
 
 The line counts measure the text inside `macro_rules! { ... }` and
-`const_structures::define! { ... }` blocks under `crates/*/src`, excluding
+`macro_schema::define! { ... }` blocks under `crates/*/src`, excluding
 examples, tests, and xtasks. The `define!` count includes the macros'
 hand-written docs, which at the baseline sat outside the `macro_rules!` braces
 and were not counted. The largest baseline generators were `__led_strips_impl`

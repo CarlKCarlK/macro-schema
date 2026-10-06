@@ -1,9 +1,9 @@
 // The invocation error shown in README.md: a misspelled field name, reported at the
 // caller's token. Keep the two in sync (tests/readme.rs checks the message).
 #[doc(hidden)]
-pub use const_structures::expand as __const_structures_expand;
+pub use macro_schema::expand as __macro_schema_expand;
 
-const_structures::define! {
+macro_schema::define! {
     pub setting {
         key: expr,
         value: ty,

@@ -140,9 +140,9 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
         #[doc = #doc]
         #[doc(hidden)]
         #[macro_export]
-        macro_rules! __const_structures_wrapper_led {
+        macro_rules! __macro_schema_wrapper_led {
             ($($input:tt)*) => {
-                $crate::__const_structures_expand! {
+                $crate::__macro_schema_expand! {
                     macro_name: "led",
                     generator: { $crate::__led_generate },
                     schema: { pin: ident },
@@ -154,7 +154,7 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
         /// An LED strip.
         #[cfg(not(feature = "host"))]
         #[doc(inline)]
-        pub use __const_structures_wrapper_led as led;
+        pub use __macro_schema_wrapper_led as led;
     };
     assert_eq!(expected.to_string(), define(input)?.to_string());
     Ok(())

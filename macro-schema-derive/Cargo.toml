@@ -1,0 +1,20 @@
+[package]
+name = "macro-schema-derive"
+description = "Procedural macro entry points for macro-schema; the logic lives in macro-schema-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["macro", "schema", "template", "declaration", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers"]
+documentation = "https://docs.rs/macro-schema-derive"
+exclude = ["Cargo.lock"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+macro-schema-core.workspace = true

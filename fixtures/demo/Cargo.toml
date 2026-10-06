@@ -8,7 +8,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-const-structures = { path = "../.." }
+macro-schema = { path = "../.." }
 
 [dev-dependencies]
 trybuild.workspace = true

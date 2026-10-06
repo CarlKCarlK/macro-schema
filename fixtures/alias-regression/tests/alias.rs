@@ -64,12 +64,12 @@ fn rustdoc_keeps_public_alias_in_its_module() -> Result<(), Box<dyn Error>> {
     assert!(macro_page.contains("Widget size."));
     assert!(
         !docs
-            .join("macro.__const_structures_wrapper_widget.html")
+            .join("macro.__macro_schema_wrapper_widget.html")
             .exists()
     );
     assert!(
         !docs
-            .join("macro.__const_structures_backend_widget.html")
+            .join("macro.__macro_schema_backend_widget.html")
             .exists()
     );
     assert!(!docs.join("widgets/macro.__widget_generate.html").exists());
