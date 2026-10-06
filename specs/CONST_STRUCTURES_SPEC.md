@@ -450,6 +450,35 @@ rule ("the declaration's values are on `$decl`, a variable's values are on the
 variable") replaces a list of special top-level names, and schema fields can
 no longer collide with built-ins outside their own namespace.
 
+### Why `generate` is required
+
+A schema defines the accepted declaration language; a template defines its
+meaning. Because schemas specify syntactic kinds (`ident`, `expr`, `ty`) rather
+than Rust types, the framework cannot generally infer useful generated code.
+Therefore `generate` remains required. Built-in generators may be reconsidered
+if a compelling general use case emerges.
+
+This was tested against all 33 Device Envoy schemas (October 2026). An implicit
+default, built-in generators such as `generate: struct`, a default with
+customization, and a trait-impl representation of the declaration were each
+evaluated. None removed the template of any schema. The evidence:
+
+- 63 of 144 leaf fields are `ident`s, mostly names pasted into type paths
+  (`peripherals::PIN_3`), not values.
+- Generated structs hold runtime resources (`&'static` state, handles), never
+  the schema's fields. Schema values size types and feed constructors.
+- Per-instance `static`s and Embassy tasks cannot be generic, so a trait-impl
+  representation consumed by ordinary generic Rust still needs a template.
+- For plain constant data, Rust already suffices:
+  `const CFG: Config = Config { a: 1, ..Config::DEFAULT }`.
+
+**Deferred: deriving a single-item macro from its group macro.** About ten
+Device Envoy single/group pairs (for example `lcd_text!` as a one-member
+`i2cs!`) share structure. Deriving one schema from the other would save
+roughly 200 template lines across 33 schemas, which does not justify the
+estimated 300–400 lines of framework machinery. Revisit if such pairs become
+common.
+
 ## Documentation
 
 Docs come from the schema, so they cannot drift from the macro.
