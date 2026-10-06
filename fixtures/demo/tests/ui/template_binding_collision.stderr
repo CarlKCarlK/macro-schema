@@ -1,5 +1,0 @@
-error: generated template binding `$field_nested_value` conflicts with another field; rename this field
- --> tests/ui/template_binding_collision.rs:4:19
-  |
-4 |         nested: { value: expr },
-  |                   ^^^^^

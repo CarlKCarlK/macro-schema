@@ -21,20 +21,20 @@ pub mod widgets {
 
     const_structures::define! {
         /// Declares a widget.
-        pub widget => widgets::__widget_generate {
+        pub widget {
             /// Widget size.
             #[default_display = "1"]
             size: expr = $crate::DEFAULT_WIDGET_SIZE,
         }
 
         generate {
-            $(#[$attrs])*
+            $attrs
             #[doc = $doc]
             $vis struct $name;
 
             impl $name {
                 /// Configured size.
-                pub const SIZE: u32 = $field_size;
+                pub const SIZE: u32 = $size;
                 /// Default from the defining library, even when renamed downstream.
                 pub const DEFAULT_SIZE: u32 = $crate::DEFAULT_WIDGET_SIZE;
             }
@@ -45,23 +45,23 @@ pub mod widgets {
     // on either generated macro or either bare-name alias.
     const_structures::define! {
         #[cfg(any())]
-        pub widget => widgets::__widget_generate { size: expr }
-        generate { compile_error!("disabled backend must be absent"); }
+        pub widget { size: expr }
+        generate { compile_error!("disabled definition must be absent"); }
     }
 
-    // Distinct public names must not collide between internal wrapper/backend names.
+    // Distinct public names must not collide between internal wrapper names.
     const_structures::define! {
-        pub item => widgets::__item_generate { size: expr }
+        pub item { size: expr }
         generate {
             $vis struct $name;
-            impl $name { pub const SIZE: u32 = $field_size; }
+            impl $name { pub const SIZE: u32 = $size; }
         }
     }
     const_structures::define! {
-        pub item_generate_impl => widgets::__other_item_generate { size: expr }
+        pub item_generate_impl { size: expr }
         generate {
             $vis struct $name;
-            impl $name { pub const SIZE: u32 = $field_size; }
+            impl $name { pub const SIZE: u32 = $size; }
         }
     }
 

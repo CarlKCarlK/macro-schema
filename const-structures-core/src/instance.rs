@@ -1,5 +1,5 @@
 use proc_macro2::{Literal, TokenStream};
-use quote::quote;
+use quote::{ToTokens, quote};
 use syn::{
     Attribute, Error, Ident, LitStr, Result, Token, Visibility, braced,
     parse::{Parse, ParseStream, Parser},
@@ -8,6 +8,7 @@ use syn::{
 
 use crate::{
     schema::{BodySpec, Default, FieldSpec, MembersSpec, Shape, escape_cell, parse_body},
+    template::{Data, EMBEDDED_SIGIL, Template},
     value::Value,
 };
 
@@ -15,9 +16,16 @@ use crate::{
 /// `macro_name: "NAME", generator: { PATH }, schema: { BODY }, input: { TOKENS },`.
 struct ExpandInput {
     macro_name: String,
-    generator: TokenStream,
+    output: Output,
     body: BodySpec,
     input: TokenStream,
+}
+
+/// Where the validated declaration goes: a library `macro_rules!` generator, or a
+/// `generate { ... }` template rendered here.
+pub(crate) enum Output {
+    Generator(TokenStream),
+    Template(TokenStream),
 }
 
 impl Parse for ExpandInput {
@@ -25,8 +33,14 @@ impl Parse for ExpandInput {
         expect_key(input, "macro_name")?;
         let macro_name = input.parse::<LitStr>()?.value();
         input.parse::<Token![,]>()?;
-        expect_key(input, "generator")?;
-        let generator = braced_tokens(input)?;
+        let key: Ident = input.parse()?;
+        input.parse::<Token![:]>()?;
+        let tokens = braced_tokens(input)?;
+        let output = match key.to_string().as_str() {
+            "generator" => Output::Generator(tokens),
+            "template" => Output::Template(tokens),
+            _ => return Err(Error::new(key.span(), "expected `generator` or `template`")),
+        };
         input.parse::<Token![,]>()?;
         expect_key(input, "schema")?;
         let content;
@@ -38,7 +52,7 @@ impl Parse for ExpandInput {
         input.parse::<Option<Token![,]>>()?;
         Ok(Self {
             macro_name,
-            generator,
+            output,
             body,
             input: user_input,
         })
@@ -63,16 +77,16 @@ fn braced_tokens(input: ParseStream) -> Result<TokenStream> {
 pub fn expand(input: TokenStream) -> Result<TokenStream> {
     let ExpandInput {
         macro_name,
-        generator,
+        output,
         body,
         input,
     } = syn::parse2(input)?;
-    expand_parts(&macro_name, &generator, &body, input)
+    expand_parts(&macro_name, &output, &body, input)
 }
 
 pub(crate) fn expand_parts(
     macro_name: &str,
-    generator: &TokenStream,
+    output: &Output,
     body: &BodySpec,
     input: TokenStream,
 ) -> Result<TokenStream> {
@@ -92,13 +106,51 @@ pub(crate) fn expand_parts(
     errors.finish()?;
 
     let mut doc = instance_doc(macro_name, None, &declaration.name, &fields)?;
+    if let Some(members) = &members {
+        let names: Vec<String> = members
+            .iter()
+            .map(|(member, _)| format!("`{}`", member.name))
+            .collect();
+        doc.push_str(&format!("\nMembers: {}.\n", names.join(", ")));
+    }
+    let generator = match output {
+        Output::Generator(generator) => generator,
+        Output::Template(template) => {
+            let template = Template::parse(template.clone(), body, EMBEDDED_SIGIL)?;
+            let member_data = match &members {
+                Some(members) => Some(
+                    members
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (member, fields))| {
+                            let member_doc = instance_doc(
+                                macro_name,
+                                Some(&declaration.name),
+                                &member.name,
+                                fields,
+                            )?;
+                            let mut data = header_data(member, &member_doc);
+                            data.push((
+                                "index".to_owned(),
+                                Data::Leaf(Literal::usize_unsuffixed(index).into_token_stream()),
+                            ));
+                            data.extend(fields_data(fields));
+                            Ok(Data::Fields(data))
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                ),
+                None => None,
+            };
+            let mut data = header_data(&declaration, &doc);
+            data.extend(fields_data(&fields));
+            if let Some(member_data) = member_data {
+                data.push(("members".to_owned(), Data::Members(member_data)));
+            }
+            return Ok(template.render(&Data::Fields(data)));
+        }
+    };
     let members_tokens = match &members {
         Some(members) => {
-            let names: Vec<String> = members
-                .iter()
-                .map(|(member, _)| format!("`{}`", member.name))
-                .collect();
-            doc.push_str(&format!("\nMembers: {}.\n", names.join(", ")));
             let entries = members
                 .iter()
                 .enumerate()
@@ -333,9 +385,32 @@ fn resolve_members<'a>(
 /// One schema field, resolved: the tokens the generator receives and how docs show it.
 struct Resolved {
     name: Ident,
+    /// What a `generator` macro receives: optional values wrapped in `[...]`.
     tokens: TokenStream,
+    /// What a `generate` template reads.
+    value: ResolvedValue,
     display: String,
     is_default: bool,
+}
+
+enum ResolvedValue {
+    Leaf(TokenStream),
+    Block(Vec<Resolved>),
+    Absent,
+}
+
+fn fields_data(fields: &[Resolved]) -> Vec<(String, Data)> {
+    fields
+        .iter()
+        .map(|field| {
+            let data = match &field.value {
+                ResolvedValue::Leaf(tokens) => Data::Leaf(tokens.clone()),
+                ResolvedValue::Block(inner) => Data::Fields(fields_data(inner)),
+                ResolvedValue::Absent => Data::Absent,
+            };
+            (field.name.to_string(), data)
+        })
+        .collect()
 }
 
 /// Every schema field in schema order, with defaults filled in; errors are collected.
@@ -381,12 +456,18 @@ fn resolve_field(
             tokens
         }
     };
-    let (tokens, display, is_default) = match (given, &spec.shape) {
-        (Some(Given::Leaf(value)), _) => (wrap(quote!(#value)), value.pretty()?, false),
+    let (tokens, value, display, is_default) = match (given, &spec.shape) {
+        (Some(Given::Leaf(value)), _) => (
+            wrap(quote!(#value)),
+            ResolvedValue::Leaf(quote!(#value)),
+            value.pretty()?,
+            false,
+        ),
         (Some(Given::Block(fields)), Shape::Block(block)) => {
             let inner = resolve_fields(fields, block, owner, member_index, errors);
             let tokens = fields_tokens(&inner);
-            (wrap(quote!({ #tokens })), block_display(&inner), false)
+            let display = block_display(&inner);
+            (wrap(quote!({ #tokens })), ResolvedValue::Block(inner), display, false)
         }
         (Some(Given::Block(_)), Shape::Leaf { .. }) => {
             return Err(Error::new(
@@ -394,7 +475,12 @@ fn resolve_field(
                 "expected a value, not a block",
             ));
         }
-        (None, _) if spec.optional => (quote!([]), "(not set)".to_owned(), false),
+        (None, _) if spec.optional => (
+            quote!([]),
+            ResolvedValue::Absent,
+            "(not set)".to_owned(),
+            false,
+        ),
         (
             None,
             Shape::Leaf {
@@ -406,7 +492,7 @@ fn resolve_field(
                 Some(display) => display.clone(),
                 None => value.pretty()?,
             };
-            (quote!(#value), display, true)
+            (quote!(#value), ResolvedValue::Leaf(quote!(#value)), display, true)
         }
         (
             None,
@@ -425,7 +511,12 @@ fn resolve_field(
                     ),
                 ));
             };
-            (quote!(#value), value.pretty()?, true)
+            (
+                quote!(#value),
+                ResolvedValue::Leaf(quote!(#value)),
+                value.pretty()?,
+                true,
+            )
         }
         (None, _) => {
             errors.push(Error::new(
@@ -438,6 +529,7 @@ fn resolve_field(
     Ok(Some(Resolved {
         name: spec.name.clone(),
         tokens,
+        value,
         display,
         is_default,
     }))
@@ -456,6 +548,20 @@ fn fields_tokens(fields: &[Resolved]) -> TokenStream {
     let names = fields.iter().map(|field| &field.name);
     let values = fields.iter().map(|field| &field.tokens);
     quote!(#(#names: #values,)*)
+}
+
+/// The declaration's own values, as a template reads them. Unlike the generator form,
+/// an inherited visibility renders as nothing.
+fn header_data(declaration: &Declaration, doc: &str) -> Vec<(String, Data)> {
+    let Declaration {
+        attrs, vis, name, ..
+    } = declaration;
+    vec![
+        ("name".to_owned(), Data::Leaf(name.to_token_stream())),
+        ("vis".to_owned(), Data::Leaf(vis.to_token_stream())),
+        ("doc".to_owned(), Data::Leaf(quote!(#doc))),
+        ("attrs".to_owned(), Data::Leaf(quote!(#(#attrs)*))),
+    ]
 }
 
 fn header_tokens(declaration: &Declaration, doc: &str) -> TokenStream {

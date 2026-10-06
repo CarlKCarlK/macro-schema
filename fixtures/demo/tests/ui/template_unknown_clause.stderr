@@ -1,4 +1,4 @@
-error: expected `generate { ... }`
+error: unexpected tokens after the schema
  --> tests/ui/template_unknown_clause.rs:3:5
   |
 3 |     build {}

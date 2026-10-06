@@ -71,25 +71,25 @@ mod template_records {
             value: 7,
             range: { max: 20, min: 10 },
             output: i32,
-            name: "complete",
+            label: "complete",
             #[derive(Debug, PartialEq)]
-            WithUpper { name: FIRST, limits: { upper: 30, min: 10 } },
-            WithoutUpper { limits: { min: 5 }, name: SECOND },
+            WithUpper { id: FIRST, limits: { upper: 30, min: 10 } },
+            WithoutUpper { limits: { min: 5 }, id: SECOND },
         }
     }
 
     demo::records::records! {
         pub(super) Defaults {
             output: u16,
-            name: "defaults",
+            label: "defaults",
             range: { min: 2 },
-            WithoutLimits { name: THIRD },
+            WithoutLimits { id: THIRD },
         }
     }
 }
 
 #[test]
-fn schema_generated_matchers_handle_nested_templates() {
+fn templates_render_nested_and_optional_values() {
     use template_records::{Complete, Defaults, WithUpper, WithoutLimits, WithoutUpper};
 
     assert_eq!(Complete, Complete);
@@ -98,7 +98,7 @@ fn schema_generated_matchers_handle_nested_templates() {
     assert_eq!(Complete::RANGE, (10, 20));
     assert_eq!(Complete::VALUE, Some(7));
     assert_eq!(Complete::MEMBER_COUNT, 2);
-    assert_eq!(WithUpper::NAME, "FIRST");
+    assert_eq!(WithUpper::ID, "FIRST");
     assert_eq!(WithUpper::INDEX, 0);
     assert_eq!(WithUpper::CHANNEL, "CHANNEL_0");
     assert_eq!(WithUpper::LIMITS, Some((10, Some(30))));

@@ -9,23 +9,28 @@ use syn::{
 };
 
 use crate::{
-    template,
+    template::{AUTHOR_SIGIL, Template, embed},
     value::{Kind, Value},
 };
 
-/// `define!` input: `{ATTR} VIS NAME => GENERATOR_PATH { BODY } [generate { TEMPLATE }]`.
+/// `define!` input, in one of two forms:
 ///
-/// `GENERATOR_PATH` is relative to the defining crate's root; the generated
-/// wrapper reaches it through `$crate`.
-/// With a template, its last segment names the generated backend alias in this scope.
+/// - `{ATTR} VIS NAME { BODY } generate { TEMPLATE }`: `expand!` renders the template.
+/// - `{ATTR} VIS NAME => GENERATOR_PATH { BODY }`: `expand!` calls a library
+///   `macro_rules!` generator, at a path relative to the defining crate's root.
 pub struct Definition {
     pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub name: Ident,
     /// Body tokens, embedded verbatim in the generated wrapper so `expand!` keeps their spans.
     pub body_tokens: TokenStream,
-    pub schema: Schema,
-    pub template: Option<TokenStream>,
+    pub body: BodySpec,
+    pub output: DefinitionOutput,
+}
+
+pub enum DefinitionOutput {
+    Generator(Path),
+    Template(TokenStream),
 }
 
 impl Parse for Definition {
@@ -33,36 +38,56 @@ impl Parse for Definition {
         let attrs = input.call(Attribute::parse_outer)?;
         let vis = input.parse()?;
         let name: Ident = input.parse()?;
-        input.parse::<Token![=>]>()?;
-        let generator: Path = input.parse()?;
-        if let Some(leading_colon) = generator.leading_colon {
-            return Err(Error::new_spanned(
-                leading_colon,
-                "the generator path is relative to this crate's root; drop the leading `::`",
-            ));
-        }
+        let generator = if input.peek(Token![=>]) {
+            input.parse::<Token![=>]>()?;
+            let generator: Path = input.parse()?;
+            if let Some(leading_colon) = generator.leading_colon {
+                return Err(Error::new_spanned(
+                    leading_colon,
+                    "the generator path is relative to this crate's root; drop the leading `::`",
+                ));
+            }
+            Some(generator)
+        } else {
+            None
+        };
         let content;
         braced!(content in input);
         let body_tokens: TokenStream = content.parse()?;
         let body = parse_body.parse2(dollar_crate_as_crate(body_tokens.clone()))?;
-        let template = if !input.is_empty() {
-            let keyword: Ident = input.parse()?;
-            if keyword != "generate" {
-                return Err(Error::new(keyword.span(), "expected `generate { ... }`"));
+        let output = match generator {
+            Some(generator) => {
+                if input.peek(syn::Ident) && input.fork().parse::<Ident>().is_ok_and(|word| word == "generate") {
+                    return Err(input.error(
+                        "a `generate { ... }` template replaces `=> generator`; use one or the other",
+                    ));
+                }
+                if !input.is_empty() {
+                    return Err(input.error("unexpected tokens after the schema"));
+                }
+                DefinitionOutput::Generator(generator)
             }
-            let content;
-            braced!(content in input);
-            Some(content.parse()?)
-        } else {
-            None
+            None => {
+                let keyword: Ident = input
+                    .parse()
+                    .map_err(|_| input.error("expected `generate { ... }` after the schema"))?;
+                if keyword != "generate" {
+                    return Err(Error::new(keyword.span(), "expected `generate { ... }`"));
+                }
+                let content;
+                braced!(content in input);
+                let template: TokenStream = content.parse()?;
+                Template::parse(template.clone(), &body, AUTHOR_SIGIL)?;
+                DefinitionOutput::Template(template)
+            }
         };
         Ok(Self {
             attrs,
             vis,
             name,
             body_tokens,
-            schema: Schema { generator, body },
-            template,
+            body,
+            output,
         })
     }
 }
@@ -94,22 +119,6 @@ fn dollar_crate_as_crate(tokens: TokenStream) -> TokenStream {
 /// Parses a top-level schema body (the part inside the braces).
 pub fn parse_body(input: ParseStream) -> Result<BodySpec> {
     BodySpec::parse(input, Context::Top)
-}
-
-/// `GENERATOR_PATH { BODY }`.
-pub struct Schema {
-    pub generator: Path,
-    pub body: BodySpec,
-}
-
-impl Parse for Schema {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let generator = input.parse()?;
-        let content;
-        braced!(content in input);
-        let body = BodySpec::parse(&content, Context::Top)?;
-        Ok(Self { generator, body })
-    }
 }
 
 /// Where a body appears; decides whether members and `by_index` are allowed.
@@ -421,50 +430,25 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
         vis,
         name,
         body_tokens,
-        schema,
-        template,
+        body,
+        output,
     } = syn::parse2(input)?;
-    let doc = macro_doc(&name, &schema)?;
+    let doc = macro_doc(&name, &body)?;
     let macro_name = name.to_string();
     let wrapper = format_ident!("__const_structures_wrapper_{}", name);
-    let generator = &schema.generator;
-    let shared_attrs: Vec<_> = attrs
-        .iter()
-        .filter(|attr| !attr.path().is_ident("doc"))
-        .collect();
-    let generated_backend = match template {
-        Some(template) => {
-            let matcher = template::matcher(&schema.body)?;
-            let implementation = format_ident!("__const_structures_backend_{}", name);
-            // The alias lives beside the schema; the author's generator path identifies
-            // it from the crate root, so it can also be reused by other client generators.
-            let alias = &generator
-                .segments
-                .last()
-                .ok_or_else(|| Error::new_spanned(generator, "the generated backend needs a name"))?
-                .ident;
-            quote! {
-                #(#shared_attrs)*
-                // Public because exported declaration macros call this normalized backend.
-                #[doc(hidden)]
-                #[macro_export]
-                macro_rules! #implementation {
-                    (#matcher) => { #template };
-                }
-
-                #(#shared_attrs)*
-                #[doc(hidden)]
-                pub use #implementation as #alias;
-            }
+    let shared_attrs = attrs.iter().filter(|attr| !attr.path().is_ident("doc"));
+    let output = match output {
+        DefinitionOutput::Generator(generator) => quote!(generator: { $crate::#generator }),
+        DefinitionOutput::Template(template) => {
+            let template = embed(template);
+            quote!(template: { #template })
         }
-        None => TokenStream::new(),
     };
     // The generated syntax and field tables go on the wrapper, the hand-written docs on
     // the alias. Rustdoc shows a re-export's own docs followed by the original item's
     // docs, so this crate's page gets both, and another crate that re-exports the macro
     // with its own docs keeps the generated tables.
     Ok(quote! {
-        #generated_backend
         #(#shared_attrs)*
         #[doc = #doc]
         #[doc(hidden)]
@@ -473,7 +457,7 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
             ($($input:tt)*) => {
                 $crate::__const_structures_expand! {
                     macro_name: #macro_name,
-                    generator: { $crate::#generator },
+                    #output,
                     schema: { #body_tokens },
                     input: { $($input)* },
                 }
@@ -487,14 +471,14 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
 }
 
 /// Syntax block and field tables appended to the macro's hand-written docs.
-pub(crate) fn macro_doc(macro_name: &Ident, schema: &Schema) -> Result<String> {
+pub(crate) fn macro_doc(macro_name: &Ident, body: &BodySpec) -> Result<String> {
     let mut doc = String::from("\n\n**Syntax:**\n\n```text\n");
     doc.push_str(&format!("{macro_name}! {{\n"));
     doc.push_str("    [<attributes>] [<visibility>] <Name> {\n");
-    syntax_lines(&schema.body, 2, &mut doc)?;
+    syntax_lines(body, 2, &mut doc)?;
     doc.push_str("    }\n}\n```\n\n**Fields:**\n\n");
-    field_table(&schema.body.fields, &mut doc)?;
-    if let Some(members) = &schema.body.members {
+    field_table(&body.fields, &mut doc)?;
+    if let Some(members) = &body.members {
         doc.push_str(&format!(
             "\n**Member fields** ({} members{}):\n\n",
             members.count_text(),

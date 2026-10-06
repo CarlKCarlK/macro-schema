@@ -1,4 +1,4 @@
-//! A small library-owned schema and backend. Run with `cargo run --example normalized`.
+//! A small library-owned schema and template. Run with `cargo run --example normalized`.
 #[doc(hidden)]
 pub use const_structures::expand as __const_structures_expand;
 
@@ -13,8 +13,8 @@ fn main() {
 }
 
 const_structures::define! {
-    /// A named collection normalized by this example's tiny backend.
-    pub channels => __channels_generate {
+    /// A named collection rendered by a template.
+    pub channels {
         /// Required device address.
         address: ident,
         /// Whether polling is enabled by default.
@@ -34,30 +34,31 @@ const_structures::define! {
     }
 
     generate {
-        $(#[$attrs])*
+        $attrs
         #[doc = $doc]
         $vis struct $name;
 
         impl $name {
-            pub const ADDRESS: &'static str = stringify!($field_address);
-            pub const ENABLED: bool = $field_enabled;
-            pub const MEMBER_COUNT: usize = $member_count;
+            pub const ADDRESS: &'static str = stringify!($address);
+            pub const ENABLED: bool = $enabled;
+            pub const MEMBER_COUNT: usize = 0 $for channel in $members { + 1 };
         }
 
-        $(
-            $(#[$member_attrs])*
-            #[doc = $member_doc]
-            $member_vis struct $member_name;
+        $for channel in $members {
+            $channel.attrs
+            #[doc = $channel.doc]
+            $channel.vis struct $channel.name;
 
-            impl $member_name {
-                pub const INDEX: usize = $member_index;
-                pub const INPUT: &'static str = stringify!($member_field_input);
-                pub const LIMITS: Option<(i32, i32)> = {
-                    let values = [None $(, Some(($member_field_limits_min, $member_field_limits_max)))?];
-                    values[values.len() - 1]
+            impl $channel.name {
+                pub const INDEX: usize = $channel.index;
+                pub const INPUT: &'static str = stringify!($channel.input);
+                pub const LIMITS: Option<(i32, i32)> = $if let Some(limits) = $channel.limits {
+                    Some(($limits.min, $limits.max))
+                } else {
+                    None
                 };
             }
-        )*
+        }
     }
 }
 

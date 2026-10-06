@@ -1,9 +1,26 @@
 //! Named-field, schema-checked declaration macros.
 //!
 //! A library declares each macro once, next to the code it generates, with
-//! [`define!`]. The schema lists each field's name, kind, default, and doc
-//! comment. From that one description come parsing, validation, defaulting,
-//! error messages, and rustdoc.
+//! [`define!`]: a schema followed by a `generate { ... }` template. The schema
+//! lists each field's name, kind, default, and doc comment. From that one
+//! description come parsing, validation, defaulting, error messages, and rustdoc.
+//! The template is ordinary Rust tokens plus four constructs:
+//!
+//! - `$name`, `$vis`, `$doc`, `$attrs`, and each top-level field (`$enabled`)
+//!   substitute the declaration's values; a nested field is `$range.min`.
+//! - `$for member in $members { ... }` repeats per member; inside, use
+//!   `$member.name`, `$member.vis`, `$member.doc`, `$member.attrs`,
+//!   `$member.index`, and its fields (`$member.pin`).
+//! - `$if let Some(x) = $optional { ... } else { ... }` reads an optional field or block.
+//! - `$ident(a, b, ...)` concatenates identifier parts exactly; `$snake(...)` and
+//!   `$upper(...)` concatenate and then convert to `snake_case` or
+//!   `SCREAMING_SNAKE_CASE`. Parts are identifiers, integers, `ident` fields,
+//!   `$name`, or `$member.index`.
+//!
+//! `$crate` refers to the defining library. Templates are type-checked against the
+//! schema when [`define!`] runs, so an unknown value, a missing field, or an optional
+//! read without `$if let` is reported at the template. Field names `name`, `vis`,
+//! `doc`, `attrs`, `members`, and `index` are reserved for these built-ins.
 //!
 //! The library must re-export [`expand!`] at its crate root under this exact name:
 //!
@@ -12,49 +29,6 @@
 //! pub use const_structures::expand as __const_structures_expand;
 //! ```
 //!
-//! Each declared macro forwards the user's tokens, its schema, and its generator
-//! path to `expand!`, which validates them and calls the library's code generator
-//! (an ordinary `macro_rules!`, at a path relative to the crate root) with every
-//! field present, in schema order:
-//!
-//! ```text
-//! generator! {
-//!     attrs: [<attributes>],
-//!     vis: [<visibility>],
-//!     name: <Name>,
-//!     doc: "<generated rustdoc for this instance>",
-//!     <field>: <value>, ...
-//! }
-//! ```
-//!
-//! The macros are general purpose: a library supplies its own schema and
-//! generator. Add a `generate { ... }` block after the schema to have [`define!`]
-//! create the backend matcher and export; write only its output template.
-//! The backend must be reachable downstream through the declared generator path;
-//! re-export it through a public path if its schema module is private.
-//! The repository README includes a standalone walkthrough and
-//! points to a small normalized backend example.
-//!
-//! Run that complete example with `cargo run --example normalized` from the
-//! repository. It demonstrates a required field, a default, attributes,
-//! visibility, members, and optional nested fields.
-//!
-//! Templates receive `$name`, `$vis`, `$doc`, and repeated `$attrs` metadata.
-//! A field `enabled` binds `$field_enabled`; a nested field `range.min` binds
-//! `$field_range_min`. Members bind `$member_name`, `$member_vis`, `$member_doc`,
-//! repeated `$member_attrs`, and `$member_index`; their fields use the
-//! `$member_field_` prefix. `$member_count` is available for member schemas.
-//! Use `$( ... )*` for members and `$( ... )?` for optional fields/blocks,
-//! following the schema's nesting. Blocks bind their leaf fields. An optional
-//! block with no leaf fields has no presence binding; use an explicit backend
-//! when its presence matters. Flattened
-//! binding-name collisions are rejected at the schema field.
-//!
-//! The generator path names the alias from the defining crate's root. For a
-//! schema in an `indicators` module, write `indicators::__indicators_generate`.
-//! Omitting `generate` keeps an explicitly authored backend, useful for
-//! generators with multiple matcher arms.
-//!
 //! ```rust,no_run
 //! #![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]
 //! #[doc(hidden)]
@@ -62,17 +36,17 @@
 //!
 //! const_structures::define! {
 //!     /// A configured indicator.
-//!     pub indicators => __indicators_generate {
+//!     pub indicators {
 //!         /// Whether the indicator starts enabled.
 //!         enabled: expr = true,
 //!     }
 //!
 //!     generate {
-//!         $(#[$attrs])*
+//!         $attrs
 //!         #[doc = $doc]
 //!         $vis struct $name;
 //!         impl $name {
-//!             pub const ENABLED: bool = $field_enabled;
+//!             pub const ENABLED: bool = $enabled;
 //!         }
 //!     }
 //! }
@@ -82,15 +56,22 @@
 //! assert!(Status::ENABLED);
 //! # }
 //! ```
+//!
+//! Run the larger example, with members and optional nested fields, with
+//! `cargo run --example normalized` from the repository.
+//!
+//! A library that needs output a template cannot express can instead write
+//! `pub NAME => GENERATOR_PATH { BODY }`: [`expand!`] then calls the library's own
+//! `macro_rules!` generator (at a path relative to the crate root) with every field
+//! present, in schema order, as `attrs: [...], vis: [...], name: ..., doc: "...",
+//! field: value, ...`.
 
 #![no_std]
 
-/// Declare a schema-backed macro in the library that owns its generator.
-/// See the [crate-level example](crate) and the repository's `normalized`
-/// example for the complete pattern.
+/// Declare a schema-backed macro in the library that owns its output.
+/// See the [crate-level example](crate).
 pub use const_structures_derive::define;
 
-/// Expand and normalize an invocation forwarded by a macro declared with
-/// [`define`]. See the [crate-level example](crate) and the repository's
-/// `normalized` example for the complete pattern.
+/// Validate and render an invocation forwarded by a macro declared with
+/// [`define`]. See the [crate-level example](crate).
 pub use const_structures_derive::expand;

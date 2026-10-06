@@ -146,10 +146,10 @@ macro_rules! __button_watch_generate {
 /// A domain-neutral template with typed values and nested optional members.
 pub mod records {
     const_structures::define! {
-        /// Declares a typed record range and its members without a backend matcher.
-        pub records => records::__records_generate {
-            /// Label; intentionally shares a name with declaration metadata.
-            name: expr,
+        /// Declares a typed record range and its members, rendered by a template.
+        pub records {
+            /// Label.
+            label: expr,
             /// Type of range bounds.
             output: ty,
             /// Required nested range, including a nested default.
@@ -158,8 +158,8 @@ pub mod records {
             value?: expr,
             /// Named records with optional limits.
             members 1..=2 {
-                /// Identifier; intentionally shares a name with member metadata.
-                name: ident,
+                /// Identifier.
+                id: ident,
                 /// Per-record channel default.
                 channel: ident = by_index[CHANNEL_0, CHANNEL_1],
                 /// Optional limits, with an optional upper bound.
@@ -168,38 +168,37 @@ pub mod records {
         }
 
         generate {
-            $(#[$attrs])*
+            $attrs
             #[doc = $doc]
             $vis struct $name;
 
             impl $name {
-                pub const LABEL: &'static str = $field_name;
-                pub const RANGE: ($field_output, $field_output) = ($field_range_min, $field_range_max);
-                pub const VALUE: Option<i32> = {
-                    let values = [None $(, Some($field_value))?];
-                    values[values.len() - 1]
+                pub const LABEL: &'static str = $label;
+                pub const RANGE: ($output, $output) = ($range.min, $range.max);
+                pub const VALUE: Option<i32> = $if let Some(initial) = $value {
+                    Some($initial)
+                } else {
+                    None
                 };
-                pub const MEMBER_COUNT: usize = $member_count;
+                pub const MEMBER_COUNT: usize = 0 $for record in $members { + 1 };
             }
 
-            $(
-                $(#[$member_attrs])*
-                #[doc = $member_doc]
-                $member_vis struct $member_name;
+            $for record in $members {
+                $record.attrs
+                #[doc = $record.doc]
+                $record.vis struct $record.name;
 
-                impl $member_name {
-                    pub const NAME: &'static str = stringify!($member_field_name);
-                    pub const CHANNEL: &'static str = stringify!($member_field_channel);
-                    pub const INDEX: usize = $member_index;
-                    pub const LIMITS: Option<(i32, Option<i32>)> = {
-                        let values = [None $(, Some(($member_field_limits_min, {
-                            let upper = [None $(, Some($member_field_limits_upper))?];
-                            upper[upper.len() - 1]
-                        })))?];
-                        values[values.len() - 1]
+                impl $record.name {
+                    pub const ID: &'static str = stringify!($record.id);
+                    pub const CHANNEL: &'static str = stringify!($record.channel);
+                    pub const INDEX: usize = $record.index;
+                    pub const LIMITS: Option<(i32, Option<i32>)> = $if let Some(limits) = $record.limits {
+                        Some(($limits.min, $if let Some(upper) = $limits.upper { Some($upper) } else { None }))
+                    } else {
+                        None
                     };
                 }
-            )*
+            }
         }
     }
 }
