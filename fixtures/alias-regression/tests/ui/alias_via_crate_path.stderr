@@ -1,14 +1,14 @@
 error: cannot determine resolution for the import
   --> tests/ui/alias_via_crate_path.rs:14:9
    |
-14 | pub use crate::__const_structures_widget as widget_by_crate_path;
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 | pub use crate::__const_structures_wrapper_widget as widget_by_crate_path;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: macro-expanded `macro_export` macros from the current crate cannot be referred to by absolute paths
   --> tests/ui/alias_via_crate_path.rs:14:9
    |
-14 | pub use crate::__const_structures_widget as widget_by_crate_path;
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 | pub use crate::__const_structures_wrapper_widget as widget_by_crate_path;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
 note: the macro is defined here
   --> tests/ui/alias_via_crate_path.rs:7:5

@@ -5,6 +5,7 @@
 
 mod instance;
 mod schema;
+mod template;
 mod value;
 
 pub use instance::expand;

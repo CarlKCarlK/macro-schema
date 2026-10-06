@@ -28,12 +28,32 @@
 //! ```
 //!
 //! The macros are general purpose: a library supplies its own schema and
-//! generator. The repository README includes a standalone walkthrough and
+//! generator. Add a `generate { ... }` block after the schema to have [`define!`]
+//! create the backend matcher and export; write only its output template.
+//! The backend must be reachable downstream through the declared generator path;
+//! re-export it through a public path if its schema module is private.
+//! The repository README includes a standalone walkthrough and
 //! points to a small normalized backend example.
 //!
 //! Run that complete example with `cargo run --example normalized` from the
 //! repository. It demonstrates a required field, a default, attributes,
 //! visibility, members, and optional nested fields.
+//!
+//! Templates receive `$name`, `$vis`, `$doc`, and repeated `$attrs` metadata.
+//! A field `enabled` binds `$field_enabled`; a nested field `range.min` binds
+//! `$field_range_min`. Members bind `$member_name`, `$member_vis`, `$member_doc`,
+//! repeated `$member_attrs`, and `$member_index`; their fields use the
+//! `$member_field_` prefix. `$member_count` is available for member schemas.
+//! Use `$( ... )*` for members and `$( ... )?` for optional fields/blocks,
+//! following the schema's nesting. Blocks bind their leaf fields. An optional
+//! block with no leaf fields has no presence binding; use an explicit backend
+//! when its presence matters. Flattened
+//! binding-name collisions are rejected at the schema field.
+//!
+//! The generator path names the alias from the defining crate's root. For a
+//! schema in an `indicators` module, write `indicators::__indicators_generate`.
+//! Omitting `generate` keeps an explicitly authored backend, useful for
+//! generators with multiple matcher arms.
 //!
 //! ```rust,no_run
 //! #![forbid(macro_expanded_macro_exports_accessed_by_absolute_paths)]
@@ -46,21 +66,15 @@
 //!         /// Whether the indicator starts enabled.
 //!         enabled: expr = true,
 //!     }
-//! }
 //!
-//! // Public because downstream expansions call this generated helper.
-//! #[doc(hidden)]
-//! #[macro_export]
-//! macro_rules! __indicators_generate {
-//!     (attrs: [$(#[$attr:meta])*], vis: [$vis:vis], name: $name:ident,
-//!      doc: $doc:literal, enabled: $enabled:expr,) => {
-//!         $(#[$attr])*
+//!     generate {
+//!         $(#[$attrs])*
 //!         #[doc = $doc]
 //!         $vis struct $name;
 //!         impl $name {
-//!             pub const ENABLED: bool = $enabled;
+//!             pub const ENABLED: bool = $field_enabled;
 //!         }
-//!     };
+//!     }
 //! }
 //!
 //! # fn main() {

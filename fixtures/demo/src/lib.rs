@@ -142,3 +142,64 @@ macro_rules! __button_watch_generate {
         }
     };
 }
+
+/// A domain-neutral template with typed values and nested optional members.
+pub mod records {
+    const_structures::define! {
+        /// Declares a typed record range and its members without a backend matcher.
+        pub records => records::__records_generate {
+            /// Label; intentionally shares a name with declaration metadata.
+            name: expr,
+            /// Type of range bounds.
+            output: ty,
+            /// Required nested range, including a nested default.
+            range: { min: expr, max: expr = 100 },
+            /// Optional initial value.
+            value?: expr,
+            /// Named records with optional limits.
+            members 1..=2 {
+                /// Identifier; intentionally shares a name with member metadata.
+                name: ident,
+                /// Per-record channel default.
+                channel: ident = by_index[CHANNEL_0, CHANNEL_1],
+                /// Optional limits, with an optional upper bound.
+                limits?: { min: expr, upper?: expr },
+            },
+        }
+
+        generate {
+            $(#[$attrs])*
+            #[doc = $doc]
+            $vis struct $name;
+
+            impl $name {
+                pub const LABEL: &'static str = $field_name;
+                pub const RANGE: ($field_output, $field_output) = ($field_range_min, $field_range_max);
+                pub const VALUE: Option<i32> = {
+                    let values = [None $(, Some($field_value))?];
+                    values[values.len() - 1]
+                };
+                pub const MEMBER_COUNT: usize = $member_count;
+            }
+
+            $(
+                $(#[$member_attrs])*
+                #[doc = $member_doc]
+                $member_vis struct $member_name;
+
+                impl $member_name {
+                    pub const NAME: &'static str = stringify!($member_field_name);
+                    pub const CHANNEL: &'static str = stringify!($member_field_channel);
+                    pub const INDEX: usize = $member_index;
+                    pub const LIMITS: Option<(i32, Option<i32>)> = {
+                        let values = [None $(, Some(($member_field_limits_min, {
+                            let upper = [None $(, Some($member_field_limits_upper))?];
+                            upper[upper.len() - 1]
+                        })))?];
+                        values[values.len() - 1]
+                    };
+                }
+            )*
+        }
+    }
+}

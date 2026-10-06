@@ -25,6 +25,14 @@ default values, nested blocks, member declarations, diagnostics, and generated
 configuration docs. It does not require unrelated client macros to share
 field names or semantics.
 
+The current prototype also accepts an optional `generate { ... }` clause
+after a schema. Its contents are ordinary `macro_rules!` output template
+tokens. The framework uses the schema to generate a matcher for those tokens
+and a hidden normalized backend macro; it does not introduce another template
+language. A definition without `generate` continues to use an explicitly
+declared generator macro, which remains useful for bespoke multi-arm
+generation.
+
 ## Schema and documentation
 
 Each client field is declared once with its name, kind, optional/default
@@ -64,6 +72,9 @@ type’s own visibility controls access.
 8. Schema field documentation and defaults drive the generated configuration
    documentation. Client-authored macro docs and examples remain with the
    client schema.
+9. In the template form, the schema generates a matcher for normalized
+   metadata, fields, optional values, and members. Definition-level attributes
+   such as `cfg` apply to the generated backend and public macro alias.
 
 ## Device Envoy choices
 
@@ -95,7 +106,7 @@ be optional.
 ```text
 const_structures::define! {
     /// Client-authored macro documentation.
-    pub configure => __configure_generate {
+    pub configure => button::configure_generate {
         /// Required resource name.
         resource: ident,
         /// Omitted value is passed as an empty bracket group.
@@ -188,6 +199,7 @@ servo! { Servo11 { pin: PIN_11 } }
 ```text
 const-structures (general; knows nothing about any user library)
     define!   declares one macro from a schema; generates syntax and field docs
+              optionally generates a normalized template backend matcher
     expand!   generic parse / validate / default / diagnostics / dispatch
 
 <library> (schemas live next to the code they generate)
@@ -197,29 +209,77 @@ const-structures (general; knows nothing about any user library)
     pub mod button {
         const_structures::define! {
             /// Client-authored prose and examples.
-            pub button_watch => __button_watch_generate {   // generator path is crate-relative
+            #[cfg(feature = "buttons")]
+            pub button_watch => button::button_watch_generate {   // path is relative to crate root
                 /// GPIO pin for the button.
                 pin: ident,
                 /// Debounce interval in milliseconds.
                 #[default_display = "20"]
                 debounce_ms: expr = $crate::DEFAULT_DEBOUNCE_MS,
             }
+
+            generate {
+                $(#[$attrs])*
+                #[doc = $doc]
+                $vis struct $name;
+                // Ordinary macro_rules template tokens follow.
+                const _: () = { let _ = stringify!($field_pin); };
+            }
         }
     }
 
-    macro_rules! __button_watch_generate { (attrs: [..], vis: [..], name: .., doc: ..,
-                                            pin: .., debounce_ms: ..,) => { ... } }
 user
     button_watch! { pub Status { pin: PIN_13 } }
 ```
 
-`define!` expands to a hidden `#[macro_export] macro_rules! __const_structures_NAME`
-with one catch-all rule, followed by `pub use __const_structures_NAME as NAME;`.
+`define!` expands to a hidden `#[macro_export] macro_rules! __const_structures_wrapper_NAME`
+with one catch-all rule, followed by `pub use __const_structures_wrapper_NAME as NAME;`.
 That rule forwards `macro_name`, `generator: { $crate::GENERATOR }`, the schema body
 tokens, and the user's tokens to `$crate::__const_structures_expand!`, which
 validates, fills defaults, and calls the generator with every field present in
 schema order, plus `attrs`, `vis` (empty becomes `pub(self)`, because `$vis:vis`
 cannot match empty at the end of `[...]`), `name`, and `doc`.
+
+For the optional template form, the final path segment of the generator path
+names the generated backend alias. The hidden exported backend matcher and
+bare-name alias are emitted at the schema location. Internal wrapper and backend
+names use disjoint `__const_structures_wrapper_` and `__const_structures_backend_`
+prefixes so distinct public names cannot collide between those roles. If the
+schema module is private, re-export the backend through the public generator
+path specified in the declaration. Other client macros can
+call that normalized backend by its ordinary path, which lets a single schema
+support related public macro entry points. Templates use native `macro_rules!`
+metavariables and repetitions; the schema controls which bindings exist and
+their repetition depth.
+
+Template bindings are:
+
+- Root metadata: `$attrs` (repeated `meta` captures), `$vis`, `$name`, `$doc`.
+- Root leaf fields: `$field_FIELD`, with the schema field name substituted for
+  `FIELD`.
+- Nested leaf fields: `$field_BLOCK_FIELD`, extending the path through each
+  nested block.
+- When the schema has members: `$member_count`, plus member metadata
+  `$member_attrs`, `$member_vis`, `$member_name`, `$member_doc`, and
+  `$member_index`.
+- Member leaf fields: `$member_field_FIELD`; nested leaves extend the path,
+  such as `$member_field_BLOCK_FIELD`.
+
+Optional fields and blocks are captured in `?` repetitions, so a template uses
+the corresponding `$( ... )?` repetition to emit their contents. Members and
+member attributes use `*` repetitions. A nested block is not captured as an
+opaque token group: its schema leaf fields are destructured into path-based
+bindings, with optional nesting reflected in the repetition nesting. If two
+fields produce the same flattened binding, definition fails with a diagnostic
+asking the schema author to rename a field.
+An optional block without leaf fields has no capture that exposes its presence
+to template repetitions; use an explicit backend when that presence matters.
+
+The template is generated as a single normalized matcher. Use an explicit
+generator macro when output requires bespoke matcher arms or when the
+normalized form cannot express its emission pattern cleanly. This is a
+generation choice, not a compatibility shim; both forms use the same schema
+validation and normalization.
 
 Because everything goes through `$crate`, a renamed dependency still works, and
 `$crate::...` is allowed in schema defaults (shown in docs through
@@ -229,8 +289,8 @@ Because everything goes through `$crate`, a renamed dependency still works, and
 
 rustc rejects absolute-path access to a `#[macro_export]` macro that was itself
 produced by macro expansion (`macro_expanded_macro_exports_accessed_by_absolute_paths`,
-deny-by-default, slated to become a hard error). `pub use crate::__const_structures_NAME`
-triggers it. A bare `pub use __const_structures_NAME as NAME;` in the same expansion
+deny-by-default, slated to become a hard error). `pub use crate::__const_structures_wrapper_NAME`
+triggers it. A bare `pub use __const_structures_wrapper_NAME as NAME;` in the same expansion
 instead re-exports the macro from textual scope, which gives it an ordinary path;
 other modules and crates then reach it through that alias (`crate::button::button_watch`,
 a crate-root `pub use button::button_watch;`, downstream imports and full paths).
@@ -244,7 +304,7 @@ crate. `fixtures/alias-regression` and `fixtures/renamed-user` enforce
 macro, downstream imports and full paths, further re-exports, and renamed
 dependencies. The alias fixture also builds rustdoc and checks the module alias
 page and generated field docs. Its `tests/ui/alias_via_crate_path.rs` control
-must fail specifically when an alias accesses `crate::__const_structures_widget`.
+must fail specifically when an alias accesses `crate::__const_structures_wrapper_widget`.
 
 ## Crate layout and diagnostics
 

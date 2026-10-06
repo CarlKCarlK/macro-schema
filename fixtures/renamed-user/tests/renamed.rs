@@ -13,5 +13,6 @@ renamed_alias::reexported::widget! { pub RenamedModule {} }
 #[test]
 fn renamed_dependency_reaches_aliases() {
     assert_eq!(RenamedRoot::SIZE, 8);
+    assert_eq!(RenamedRoot::DEFAULT_SIZE, 1);
     assert_eq!(RenamedModule::SIZE, 1);
 }

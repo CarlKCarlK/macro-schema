@@ -6,7 +6,52 @@ use crate::{
     Result, define,
     instance::expand_parts,
     schema::{Schema, macro_doc},
+    template,
 };
+
+#[test]
+fn template_matcher_covers_kinds_metadata_and_repetition_depths() -> Result<()> {
+    let schema: Schema = syn::parse2(quote! {
+        __generate {
+            name: ident,
+            value?: expr,
+            output: ty,
+            bounds: { min: expr, max: expr },
+            members 1.. {
+                name: ident,
+                index: expr = 0,
+                limits?: { min: expr, upper?: expr },
+            },
+        }
+    })?;
+    let expected = quote! {
+        attrs: [$(#[$attrs:meta])*],
+        vis: [$vis:vis],
+        name: $name:ident,
+        doc: $doc:literal,
+        name: $field_name:ident,
+        value: [$($field_value:expr)?],
+        output: $field_output:ty,
+        bounds: { min: $field_bounds_min:expr, max: $field_bounds_max:expr, },
+        member_count: $member_count:literal,
+        members: [$({
+            index: $member_index:literal,
+            attrs: [$(#[$member_attrs:meta])*],
+            vis: [$member_vis:vis],
+            name: $member_name:ident,
+            doc: $member_doc:literal,
+            name: $member_field_name:ident,
+            index: $member_field_index:expr,
+            limits: [$({ min: $member_field_limits_min:expr,
+                upper: [$($member_field_limits_upper:expr)?], })?],
+        },)*],
+    };
+    assert_eq!(
+        template::matcher(&schema.body)?.to_string(),
+        expected.to_string()
+    );
+    Ok(())
+}
 
 const LED_SCHEMA: &str = "__led_generate {
     /// GPIO pin.
@@ -113,7 +158,7 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
         #[doc = #doc]
         #[doc(hidden)]
         #[macro_export]
-        macro_rules! __const_structures_led {
+        macro_rules! __const_structures_wrapper_led {
             ($($input:tt)*) => {
                 $crate::__const_structures_expand! {
                     macro_name: "led",
@@ -127,7 +172,7 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
         /// An LED strip.
         #[cfg(not(feature = "host"))]
         #[doc(inline)]
-        pub use __const_structures_led as led;
+        pub use __const_structures_wrapper_led as led;
     };
     assert_eq!(expected.to_string(), define(input)?.to_string());
     Ok(())

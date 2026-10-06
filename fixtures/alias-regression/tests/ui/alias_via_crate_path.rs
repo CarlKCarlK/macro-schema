@@ -11,6 +11,6 @@ mod widgets {
     }
 }
 
-pub use crate::__const_structures_widget as widget_by_crate_path;
+pub use crate::__const_structures_wrapper_widget as widget_by_crate_path;
 
 fn main() {}

@@ -32,55 +32,33 @@ const_structures::define! {
             },
         }
     }
-}
 
-#[doc(hidden)]
-// Must be public because the exported schema macro invokes it from downstream crates.
-#[macro_export]
-macro_rules! __channels_generate {
-    (
-        attrs: [$(#[$attr:meta])*],
-        vis: [$vis:vis],
-        name: $name:ident,
-        doc: $doc:literal,
-        address: $address:ident,
-        enabled: $enabled:expr,
-        member_count: $member_count:literal,
-        members: [$({
-            index: $index:literal,
-            attrs: [$(#[$member_attr:meta])*],
-            vis: [$member_vis:vis],
-            name: $member:ident,
-            doc: $member_doc:literal,
-            input: $input:ident,
-            limits: [$({ min: $min:expr, max: $max:expr, })?],
-        },)*],
-    ) => {
-        $(#[$attr])*
+    generate {
+        $(#[$attrs])*
         #[doc = $doc]
         $vis struct $name;
 
         impl $name {
-            pub const ADDRESS: &'static str = stringify!($address);
-            pub const ENABLED: bool = $enabled;
+            pub const ADDRESS: &'static str = stringify!($field_address);
+            pub const ENABLED: bool = $field_enabled;
             pub const MEMBER_COUNT: usize = $member_count;
         }
 
         $(
-            $(#[$member_attr])*
+            $(#[$member_attrs])*
             #[doc = $member_doc]
-            $member_vis struct $member;
+            $member_vis struct $member_name;
 
-            impl $member {
-                pub const INDEX: usize = $index;
-                pub const INPUT: &'static str = stringify!($input);
+            impl $member_name {
+                pub const INDEX: usize = $member_index;
+                pub const INPUT: &'static str = stringify!($member_field_input);
                 pub const LIMITS: Option<(i32, i32)> = {
-                    let values = [None $(, Some(($min, $max)))?];
+                    let values = [None $(, Some(($member_field_limits_min, $member_field_limits_max)))?];
                     values[values.len() - 1]
                 };
             }
         )*
-    };
+    }
 }
 
 channels! {

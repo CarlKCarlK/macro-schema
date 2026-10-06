@@ -13,14 +13,55 @@
 #[doc(hidden)]
 pub use const_structures::expand as __const_structures_expand;
 
+/// Default widget size, used from both the schema and its generated backend.
+pub const DEFAULT_WIDGET_SIZE: u32 = 1;
+
 pub mod widgets {
     //! Declares the macro in a module.
 
     const_structures::define! {
         /// Declares a widget.
-        pub widget => __widget_generate {
+        pub widget => widgets::__widget_generate {
             /// Widget size.
-            size: expr = 1,
+            #[default_display = "1"]
+            size: expr = $crate::DEFAULT_WIDGET_SIZE,
+        }
+
+        generate {
+            $(#[$attrs])*
+            #[doc = $doc]
+            $vis struct $name;
+
+            impl $name {
+                /// Configured size.
+                pub const SIZE: u32 = $field_size;
+                /// Default from the defining library, even when renamed downstream.
+                pub const DEFAULT_SIZE: u32 = $crate::DEFAULT_WIDGET_SIZE;
+            }
+        }
+    }
+
+    // A disabled definition with the same names detects missing cfg propagation
+    // on either generated macro or either bare-name alias.
+    const_structures::define! {
+        #[cfg(any())]
+        pub widget => widgets::__widget_generate { size: expr }
+        generate { compile_error!("disabled backend must be absent"); }
+    }
+
+    // Distinct public names must not collide between internal wrapper/backend names.
+    const_structures::define! {
+        pub item => widgets::__item_generate { size: expr }
+        generate {
+            $vis struct $name;
+            impl $name { pub const SIZE: u32 = $field_size; }
+        }
+    }
+    const_structures::define! {
+        pub item_generate_impl => widgets::__other_item_generate { size: expr }
+        generate {
+            $vis struct $name;
+            impl $name { pub const SIZE: u32 = $field_size; }
         }
     }
 
@@ -54,25 +95,4 @@ macro_rules! from_another_macro {
 /// Call made from inside another macro's expansion.
 pub mod via_macro {
     from_another_macro!(FromAnotherMacro);
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __widget_generate {
-    (
-        attrs: [$(#[$attr:meta])*],
-        vis: [$vis:vis],
-        name: $name:ident,
-        doc: $doc:literal,
-        size: $size:expr,
-    ) => {
-        $(#[$attr])*
-        #[doc = $doc]
-        $vis struct $name;
-
-        impl $name {
-            /// Configured size.
-            pub const SIZE: u32 = $size;
-        }
-    };
 }

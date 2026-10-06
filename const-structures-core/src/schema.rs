@@ -8,12 +8,16 @@ use syn::{
     token,
 };
 
-use crate::value::{Kind, Value};
+use crate::{
+    template,
+    value::{Kind, Value},
+};
 
-/// `define!` input: `{ATTR} VIS NAME => GENERATOR_PATH { BODY }`.
+/// `define!` input: `{ATTR} VIS NAME => GENERATOR_PATH { BODY } [generate { TEMPLATE }]`.
 ///
 /// `GENERATOR_PATH` is relative to the defining crate's root; the generated
 /// wrapper reaches it through `$crate`.
+/// With a template, its last segment names the generated backend alias in this scope.
 pub struct Definition {
     pub attrs: Vec<Attribute>,
     pub vis: Visibility,
@@ -21,6 +25,7 @@ pub struct Definition {
     /// Body tokens, embedded verbatim in the generated wrapper so `expand!` keeps their spans.
     pub body_tokens: TokenStream,
     pub schema: Schema,
+    pub template: Option<TokenStream>,
 }
 
 impl Parse for Definition {
@@ -40,12 +45,24 @@ impl Parse for Definition {
         braced!(content in input);
         let body_tokens: TokenStream = content.parse()?;
         let body = parse_body.parse2(dollar_crate_as_crate(body_tokens.clone()))?;
+        let template = if !input.is_empty() {
+            let keyword: Ident = input.parse()?;
+            if keyword != "generate" {
+                return Err(Error::new(keyword.span(), "expected `generate { ... }`"));
+            }
+            let content;
+            braced!(content in input);
+            Some(content.parse()?)
+        } else {
+            None
+        };
         Ok(Self {
             attrs,
             vis,
             name,
             body_tokens,
             schema: Schema { generator, body },
+            template,
         })
     }
 }
@@ -405,17 +422,49 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
         name,
         body_tokens,
         schema,
+        template,
     } = syn::parse2(input)?;
     let doc = macro_doc(&name, &schema)?;
     let macro_name = name.to_string();
-    let wrapper = format_ident!("__const_structures_{}", name);
+    let wrapper = format_ident!("__const_structures_wrapper_{}", name);
     let generator = &schema.generator;
-    let shared_attrs = attrs.iter().filter(|attr| !attr.path().is_ident("doc"));
+    let shared_attrs: Vec<_> = attrs
+        .iter()
+        .filter(|attr| !attr.path().is_ident("doc"))
+        .collect();
+    let generated_backend = match template {
+        Some(template) => {
+            let matcher = template::matcher(&schema.body)?;
+            let implementation = format_ident!("__const_structures_backend_{}", name);
+            // The alias lives beside the schema; the author's generator path identifies
+            // it from the crate root, so it can also be reused by other client generators.
+            let alias = &generator
+                .segments
+                .last()
+                .ok_or_else(|| Error::new_spanned(generator, "the generated backend needs a name"))?
+                .ident;
+            quote! {
+                #(#shared_attrs)*
+                // Public because exported declaration macros call this normalized backend.
+                #[doc(hidden)]
+                #[macro_export]
+                macro_rules! #implementation {
+                    (#matcher) => { #template };
+                }
+
+                #(#shared_attrs)*
+                #[doc(hidden)]
+                pub use #implementation as #alias;
+            }
+        }
+        None => TokenStream::new(),
+    };
     // The generated syntax and field tables go on the wrapper, the hand-written docs on
     // the alias. Rustdoc shows a re-export's own docs followed by the original item's
     // docs, so this crate's page gets both, and another crate that re-exports the macro
     // with its own docs keeps the generated tables.
     Ok(quote! {
+        #generated_backend
         #(#shared_attrs)*
         #[doc = #doc]
         #[doc(hidden)]

@@ -27,6 +27,31 @@ the client crate when dependencies are renamed. The `fixtures/demo` lint and
 internal invocation, `fixtures/renamed-user`, and
 `fixtures/alias-regression` exercise these details.
 
+`define!` now has two generator forms. The explicit generator-path form keeps
+supporting custom multi-arm backends. An optional trailing `generate { ... }`
+instead takes ordinary `macro_rules!` output tokens and derives a single
+matcher from the schema. That matcher is emitted as a hidden exported backend
+with a bare-name alias in the schema's module; the final segment of the
+generator path names that alias. Definition attributes such as `cfg` are
+applied to the backend and alias.
+
+Template bindings include root metadata (`$attrs`, `$vis`, `$name`, `$doc`),
+root leaf values (`$field_FIELD`), nested leaf values
+(`$field_BLOCK_FIELD`), and, for schemas with members, `$member_count` plus
+member metadata (`$member_attrs`, `$member_vis`, `$member_name`, `$member_doc`,
+`$member_index`) and leaf values (`$member_field_FIELD`, extended through
+nested blocks). Optional fields/blocks and members follow `?` and `*`
+macro-repetition nesting. Blocks are destructured into leaf bindings rather
+than captured opaquely, and colliding flattened binding names are diagnosed.
+The spec documents the full binding and normalization contract.
+
+This is a prototype, not a wholesale Device Envoy migration to templates.
+`examples/normalized.rs` demonstrates the template form, and RP `led_strips!`
+now uses it to generate the normalized backend matcher. Its helper macros,
+such as the per-member emitter, still implement domain-specific output. Other
+Device Envoy declarations retain their explicit generator backends where that
+form fits their generation needs.
+
 Device Envoy's public RP and ESP schemas cover buttons, infrared declarations,
 LCD groups and devices, LED devices and groups, audio players, and servos and
 servo players. Core audio clip declarations `pcm_clip!` and `adpcm_clip!` also
