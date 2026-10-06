@@ -121,7 +121,7 @@ Items 1–10 were syntax, 11–17 semantics, and 18–24 implementation.
 | 10 | `init_and_start!` fields name generated `let` bindings | Unchanged |
 | 11 | `max_current` required in `led_strips!` members, defaulted elsewhere | Intentional: one device defaults to 250 mA; a group of several must budget each member, because currents on a shared supply add up. The field docs now say so, and that separately declared devices each get the default |
 | 12 | `dma` defaulted on RP `audio_player!`, required on ESP | Unchanged |
-| 13 | `pio` defaults to `PIO0` except RP IR, where it is required | Unchanged |
+| 13 | `pio` defaults to `PIO0` except RP IR, where it is required | Fixed: RP IR macros default to `PIO0` too. A PIO clash still fails to compile (ownership of the PIO peripheral), and every RP `pio` field doc now says what to do about it |
 | 14 | Animation length named `max_frames` (LED strips) or `max_steps` (`led!`, `servo_player!`) | Names unchanged. All LED strip and panel schemas share `MAX_FRAMES_DEFAULT` (16) |
 | 15 | ESP `led2d!` requires `len` although `led_layout` implies it | Fixed: `len` removed; the LED count comes from `led_layout`, as on RP |
 | 16 | ESP `led2d!` defaulted `engine` to RMT, while `led_strip!` chose by chip | Both choose by chip: RMT where available, otherwise SPI, through the shared capability check |
