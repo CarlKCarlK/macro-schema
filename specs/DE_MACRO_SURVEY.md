@@ -131,7 +131,7 @@ Items 1–10 were syntax, 11–17 semantics, and 18–24 implementation.
 | 20 | `init_and_start!` enumerates each permutation of its options and calls `.expect(...)` | Unchanged; out of scope |
 | 21 | Duplicated matcher arm in `pcm_clip!` | Gone with the matcher |
 | 22 | ESP `servo_player!` docs advertised visibility and any order; the matcher accepted neither | Both accepted, and the syntax docs are generated |
-| 23 | Resource exclusivity enforced three ways | Still varied: ESP servo link-time claim symbols, LCD unique-address const assert, and now a compile error for two RP LED groups on one PIO in one module. Other peripherals rely on HAL ownership |
+| 23 | Resource exclusivity enforced three ways | Audited: every tested clash fails to build, none silently. Owned peripherals (PIO, DMA, pins, I²C, I²S, RMT, SPI, PWM slices) give `use of moved value`; two RP LED groups on one PIO in one module, the ESP LEDC claims, and duplicate LCD addresses give errors that name the rule. The LEDC claims, previously untested, now have compile-fail tests and a control, and an RP test covers a cross-macro PIO clash. A LEDC clash across crates (a linker error) is not tested |
 | 24 | Generated item names derived with `paste!` | Derived with `$ident` / `$snake` / `$upper` in templates; still not visible in the invocation |
 
 Items 11–17 were API questions for Device Envoy, not framework limitations.
