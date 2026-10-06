@@ -123,7 +123,7 @@ Items 1–10 were syntax, 11–17 semantics, and 18–24 implementation.
 | 12 | `dma` defaulted on RP `audio_player!`, required on ESP | Unchanged |
 | 13 | `pio` defaults to `PIO0` except RP IR, where it is required | Unchanged |
 | 14 | Animation length named `max_frames` (LED strips) or `max_steps` (`led!`, `servo_player!`) | Names unchanged. All LED strip and panel schemas share `MAX_FRAMES_DEFAULT` (16) |
-| 15 | ESP `led2d!` requires `len` although `led_layout` implies it | Unchanged |
+| 15 | ESP `led2d!` requires `len` although `led_layout` implies it | Fixed: `len` removed; the LED count comes from `led_layout`, as on RP |
 | 16 | ESP `led2d!` defaulted `engine` to RMT, while `led_strip!` chose by chip | Both choose by chip: RMT where available, otherwise SPI, through the shared capability check |
 | 17 | `pcm_clip!` requires a source rate; `adpcm_clip!` reads it from the WAV header | Unchanged: a raw PCM file has no header |
 | 18 | Shared field validator in only four macros | Removed; the framework validates every macro |
@@ -155,6 +155,11 @@ defaults.
   select SPI on such chips, and explicit RMT requests go through the shared
   capability check (item 16).
 - **ESP `servo_player!` documentation and matcher disagreed** (item 22).
+- **ESP strip `len` and `reset_us` could not name the caller's constants.** The
+  helpers evaluated them inside a generated `mod NAME_consts`, where the caller's
+  private items are not visible, so `len: MY_CONST` failed to compile. Found while
+  removing ESP `led2d!`'s `len` (item 15); both are now evaluated in the caller's
+  scope.
 
 ### Regressions the migration introduced and then fixed
 
