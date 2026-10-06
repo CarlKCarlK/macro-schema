@@ -14,7 +14,9 @@
 
 use std::iter::Peekable;
 
-use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree, token_stream};
+use proc_macro2::{
+    Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree, token_stream,
+};
 use syn::{Error, Result};
 
 use crate::schema::{BodySpec, Shape};
@@ -99,7 +101,9 @@ struct Path {
 #[derive(Clone, Copy)]
 enum Ty<'a> {
     /// A substitutable value; `ident_like` if it is always one identifier (or an index).
-    Leaf { ident_like: bool },
+    Leaf {
+        ident_like: bool,
+    },
     Optional(&'a Shape),
     Block(&'a BodySpec),
     Member(&'a BodySpec),
@@ -127,7 +131,9 @@ impl Template {
             if RESERVED.contains(&word.as_str()) {
                 return Err(Error::new(
                     field.name.span(),
-                    format!("field `{word}` collides with the template's built-in `${word}`; rename the field"),
+                    format!(
+                        "field `{word}` collides with the template's built-in `${word}`; rename the field"
+                    ),
                 ));
             }
         }
@@ -161,8 +167,11 @@ impl<'a> Parser<'a> {
                     let keyword = expect_ident(&mut tokens, punct.span(), "a template construct")?;
                     nodes.push(self.construct(punct.span(), keyword, &mut tokens)?);
                 }
-                TokenTree::Punct(punct) if punct.as_char() == AUTHOR_SIGIL && self.sigil == AUTHOR_SIGIL => {
-                    let is_crate = matches!(tokens.peek(), Some(TokenTree::Ident(ident)) if ident == "crate");
+                TokenTree::Punct(punct)
+                    if punct.as_char() == AUTHOR_SIGIL && self.sigil == AUTHOR_SIGIL =>
+                {
+                    let is_crate =
+                        matches!(tokens.peek(), Some(TokenTree::Ident(ident)) if ident == "crate");
                     if !is_crate {
                         return Err(Error::new(
                             punct.span(),
@@ -232,7 +241,10 @@ impl<'a> Parser<'a> {
         let root = expect_ident(tokens, var.span(), "`$members` after `in`")?;
         let (path, ty) = self.path(root, tokens)?;
         let (Ty::Members, Some(members)) = (ty, &self.body.members) else {
-            return Err(path_error(&path, "is not the member list; loop over `$members`"));
+            return Err(path_error(
+                &path,
+                "is not the member list; loop over `$members`",
+            ));
         };
         let body = expect_group(tokens, var.span(), Delimiter::Brace, "`{ ... }`")?;
         self.check_new_name(&var)?;
@@ -263,12 +275,21 @@ impl<'a> Parser<'a> {
         let root = expect_ident(tokens, var.span(), "an optional value after `=`")?;
         let (path, ty) = self.path(root, tokens)?;
         let Ty::Optional(shape) = ty else {
-            return Err(path_error(&path, "is not optional; `$if let` needs an optional field"));
+            return Err(path_error(
+                &path,
+                "is not optional; `$if let` needs an optional field",
+            ));
         };
         let then_tokens = expect_group(tokens, var.span(), Delimiter::Brace, "`{ ... }`")?;
-        let otherwise_tokens = if matches!(tokens.peek(), Some(TokenTree::Ident(ident)) if ident == "else") {
+        let otherwise_tokens = if matches!(tokens.peek(), Some(TokenTree::Ident(ident)) if ident == "else")
+        {
             tokens.next();
-            Some(expect_group(tokens, var.span(), Delimiter::Brace, "`{ ... }` after `else`")?)
+            Some(expect_group(
+                tokens,
+                var.span(),
+                Delimiter::Brace,
+                "`{ ... }` after `else`",
+            )?)
         } else {
             None
         };
@@ -309,7 +330,12 @@ impl<'a> Parser<'a> {
                     parts.push(Part::Value(path));
                 }
                 TokenTree::Ident(ident) => parts.push(Part::Text(ident.to_string())),
-                TokenTree::Literal(literal) if literal.to_string().bytes().all(|byte| byte.is_ascii_digit()) => {
+                TokenTree::Literal(literal)
+                    if literal
+                        .to_string()
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit()) =>
+                {
                     parts.push(Part::Text(literal.to_string()));
                 }
                 other => {
@@ -323,7 +349,10 @@ impl<'a> Parser<'a> {
                 None => break,
                 Some(TokenTree::Punct(punct)) if punct.as_char() == ',' => {}
                 Some(other) => {
-                    return Err(Error::new(other.span(), "expected `,` between identifier parts"));
+                    return Err(Error::new(
+                        other.span(),
+                        "expected `,` between identifier parts",
+                    ));
                 }
             }
         }
@@ -359,7 +388,10 @@ impl<'a> Parser<'a> {
                     None => {
                         return Err(Error::new(
                             field.span(),
-                            format!("no field `{field}` here; expected one of {}", field_list(body, is_member)),
+                            format!(
+                                "no field `{field}` here; expected one of {}",
+                                field_list(body, is_member)
+                            ),
                         ));
                     }
                 },
@@ -383,7 +415,10 @@ impl<'a> Parser<'a> {
                 None => {
                     return Err(Error::new(
                         root.span(),
-                        format!("unknown template value `${word}`; expected one of {}", self.top_list()),
+                        format!(
+                            "unknown template value `${word}`; expected one of {}",
+                            self.top_list()
+                        ),
                     ));
                 }
             },
@@ -412,7 +447,12 @@ impl<'a> Parser<'a> {
         if self.body.members.is_some() {
             names.push("`$members`".to_owned());
         }
-        names.extend(self.body.fields.iter().map(|field| format!("`${}`", field.name)));
+        names.extend(
+            self.body
+                .fields
+                .iter()
+                .map(|field| format!("`${}`", field.name)),
+        );
         names.extend(self.scopes.iter().map(|scope| format!("`${}`", scope.name)));
         names.join(", ")
     }
@@ -431,7 +471,11 @@ fn shape_ty(optional: bool, shape: &Shape) -> Ty<'_> {
 fn field_list(body: &BodySpec, is_member: bool) -> String {
     let mut names: Vec<String> = Vec::new();
     if is_member {
-        names.extend(["name", "vis", "doc", "attrs", "index"].iter().map(|name| format!("`{name}`")));
+        names.extend(
+            ["name", "vis", "doc", "attrs", "index"]
+                .iter()
+                .map(|name| format!("`{name}`")),
+        );
     }
     names.extend(body.fields.iter().map(|field| format!("`{}`", field.name)));
     names.join(", ")
@@ -470,7 +514,12 @@ fn expect_sigil(tokens: &mut Tokens, sigil: char, after: Span) -> Result<()> {
     }
 }
 
-fn expect_group(tokens: &mut Tokens, after: Span, delimiter: Delimiter, what: &str) -> Result<Group> {
+fn expect_group(
+    tokens: &mut Tokens,
+    after: Span,
+    delimiter: Delimiter,
+    what: &str,
+) -> Result<Group> {
     match tokens.next() {
         Some(TokenTree::Group(group)) if group.delimiter() == delimiter => Ok(group),
         Some(other) => Err(Error::new(other.span(), format!("expected {what}"))),
@@ -492,7 +541,10 @@ impl Data {
     /// missing name means no output rather than an error.
     fn get(&self, name: &str) -> Option<&Data> {
         match self {
-            Data::Fields(fields) => fields.iter().find(|(field, _)| field == name).map(|(_, data)| data),
+            Data::Fields(fields) => fields
+                .iter()
+                .find(|(field, _)| field == name)
+                .map(|(_, data)| data),
             _ => None,
         }
     }
@@ -510,7 +562,12 @@ fn lookup<'d>(root: &'d Data, env: &[(String, &'d Data)], path: &Path) -> Option
     Some(data)
 }
 
-fn render_nodes<'d>(nodes: &[Node], root: &'d Data, env: &mut Vec<(String, &'d Data)>, output: &mut TokenStream) {
+fn render_nodes<'d>(
+    nodes: &[Node],
+    root: &'d Data,
+    env: &mut Vec<(String, &'d Data)>,
+    output: &mut TokenStream,
+) {
     for node in nodes {
         match node {
             Node::Token(token) => output.extend([token.clone()]),
@@ -569,15 +626,19 @@ fn render_nodes<'d>(nodes: &[Node], root: &'d Data, env: &mut Vec<(String, &'d D
                     Case::Snake => to_snake_case(&text),
                     Case::Upper => to_snake_case(&text).to_uppercase(),
                 };
-                output.extend([TokenTree::Ident(Ident::new(&text, ident_span.unwrap_or(*span)))]);
+                output.extend([TokenTree::Ident(Ident::new(
+                    &text,
+                    ident_span.unwrap_or(*span),
+                ))]);
             }
         }
     }
 }
 
 /// `Gpio0LedStrip_pin` → `gpio0_led_strip_pin`; `PIO0_BUS` → `pio0_bus`. An underscore
-/// starts a word before an uppercase letter that follows a lowercase letter or digit,
-/// and before the last capital of an acronym (`HTTPServer` → `http_server`).
+/// starts a word before an uppercase letter that follows a lowercase letter, or digits
+/// that follow a lowercase letter, and before the last capital of an acronym
+/// (`HTTPServer` → `http_server`). All-caps text keeps its words (`LED2D` → `led2d`).
 pub(crate) fn to_snake_case(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut output = String::new();
@@ -585,8 +646,14 @@ pub(crate) fn to_snake_case(text: &str) -> String {
         if character.is_uppercase() && index > 0 {
             let previous = chars[index - 1];
             let next_is_lower = chars.get(index + 1).is_some_and(|next| next.is_lowercase());
+            let after_lowercase_digits = previous.is_ascii_digit()
+                && chars[..index]
+                    .iter()
+                    .rev()
+                    .find(|earlier| !earlier.is_ascii_digit())
+                    .is_some_and(|earlier| earlier.is_lowercase());
             let starts_word = previous.is_lowercase()
-                || previous.is_ascii_digit()
+                || after_lowercase_digits
                 || (previous.is_uppercase() && next_is_lower);
             if starts_word && !output.ends_with('_') {
                 output.push('_');

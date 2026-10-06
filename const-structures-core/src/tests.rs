@@ -44,7 +44,12 @@ const LED_SCHEMA: &str = "__led_generate {
 /// Expands `input` against a `GENERATOR { BODY }` schema, as the generated wrapper would.
 fn run(schema: &str, macro_name: &str, input: TokenStream) -> Result<TokenStream> {
     let Schema { generator, body } = syn::parse_str(schema)?;
-    expand_parts(macro_name, &Output::Generator(quote!(#generator)), &body, input)
+    expand_parts(
+        macro_name,
+        &Output::Generator(quote!(#generator)),
+        &body,
+        input,
+    )
 }
 
 fn pretty(tokens: TokenStream) -> Result<String> {
@@ -427,7 +432,9 @@ fn render(template: TokenStream, input: TokenStream) -> Result<TokenStream> {
 
 fn template_error(template: TokenStream) -> Option<String> {
     let body = strips_body().ok()?;
-    Template::parse(template, &body, AUTHOR_SIGIL).err().map(|error| error.to_string())
+    Template::parse(template, &body, AUTHOR_SIGIL)
+        .err()
+        .map(|error| error.to_string())
 }
 
 #[test]
@@ -462,7 +469,9 @@ fn template_renders_loops_optionals_and_identifiers() -> Result<()> {
         const _: crate::Dma = crate::Dma::DMA1;
     };
     // Outside a `macro_rules!` wrapper, `$crate` stays two tokens.
-    let rendered = render(template, input)?.to_string().replace("$ crate", "crate");
+    let rendered = render(template, input)?
+        .to_string()
+        .replace("$ crate", "crate");
     assert_eq!(expected.to_string(), rendered);
     Ok(())
 }
@@ -519,7 +528,9 @@ fn define_template_form_embeds_template_with_hash_sigils() -> Result<()> {
     };
     let output = define(input)?.to_string();
     assert!(
-        output.contains("template : { struct # name ; const _ : $ crate :: Pin = $ crate :: Pin :: # pin ; }"),
+        output.contains(
+            "template : { struct # name ; const _ : $ crate :: Pin = $ crate :: Pin :: # pin ; }"
+        ),
         "{output}"
     );
     Ok(())
@@ -542,6 +553,8 @@ fn snake_case_splits_words_digits_and_acronyms() {
         ("HTTPServer", "http_server"),
         ("Font4x6Trim", "font4x6_trim"),
         ("__Inner", "__inner"),
+        ("LED2D_OR_LED_STRIPS", "led2d_or_led_strips"),
+        ("Ir15Receiver", "ir15_receiver"),
     ] {
         assert_eq!(to_snake_case(input), expected);
     }

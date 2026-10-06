@@ -57,7 +57,12 @@ impl Parse for Definition {
         let body = parse_body.parse2(dollar_crate_as_crate(body_tokens.clone()))?;
         let output = match generator {
             Some(generator) => {
-                if input.peek(syn::Ident) && input.fork().parse::<Ident>().is_ok_and(|word| word == "generate") {
+                if input.peek(syn::Ident)
+                    && input
+                        .fork()
+                        .parse::<Ident>()
+                        .is_ok_and(|word| word == "generate")
+                {
                     return Err(input.error(
                         "a `generate { ... }` template replaces `=> generator`; use one or the other",
                     ));

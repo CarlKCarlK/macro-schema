@@ -467,7 +467,12 @@ fn resolve_field(
             let inner = resolve_fields(fields, block, owner, member_index, errors);
             let tokens = fields_tokens(&inner);
             let display = block_display(&inner);
-            (wrap(quote!({ #tokens })), ResolvedValue::Block(inner), display, false)
+            (
+                wrap(quote!({ #tokens })),
+                ResolvedValue::Block(inner),
+                display,
+                false,
+            )
         }
         (Some(Given::Block(_)), Shape::Leaf { .. }) => {
             return Err(Error::new(
@@ -492,7 +497,12 @@ fn resolve_field(
                 Some(display) => display.clone(),
                 None => value.pretty()?,
             };
-            (quote!(#value), ResolvedValue::Leaf(quote!(#value)), display, true)
+            (
+                quote!(#value),
+                ResolvedValue::Leaf(quote!(#value)),
+                display,
+                true,
+            )
         }
         (
             None,
