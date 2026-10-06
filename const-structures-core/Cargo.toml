@@ -5,6 +5,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+readme = "README.md"
+keywords = ["const", "configuration", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers"]
+documentation = "https://docs.rs/const-structures-core"
+exclude = ["Cargo.lock"]
+# TODO0 Add the canonical repository URL and homepage before publishing.
 
 [dependencies]
 proc-macro2.workspace = true
