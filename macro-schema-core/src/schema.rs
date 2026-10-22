@@ -100,7 +100,7 @@ impl Parse for Definition {
 /// `define!` receives `$crate` in schema defaults as two tokens, `$` and `crate`, which
 /// syn cannot parse. For validation and docs, read it as `crate`; the wrapper embeds
 /// the original tokens, where `macro_rules!` turns them into a real `$crate`.
-fn dollar_crate_as_crate(tokens: TokenStream) -> TokenStream {
+pub(crate) fn dollar_crate_as_crate(tokens: TokenStream) -> TokenStream {
     let mut output = Vec::new();
     let mut tokens = tokens.into_iter().peekable();
     while let Some(token) = tokens.next() {

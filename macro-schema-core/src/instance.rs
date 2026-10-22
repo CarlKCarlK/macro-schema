@@ -7,8 +7,11 @@ use syn::{
 };
 
 use crate::{
-    schema::{BodySpec, Default, FieldSpec, MembersSpec, Shape, escape_cell, parse_body},
-    template::{Data, EMBEDDED_SIGIL, Template},
+    schema::{
+        BodySpec, Default, Definition, DefinitionOutput, FieldSpec, MembersSpec, Shape,
+        dollar_crate_as_crate, escape_cell, parse_body,
+    },
+    template::{Data, EMBEDDED_SIGIL, Template, embed},
     value::Value,
 };
 
@@ -89,6 +92,41 @@ pub fn expand(input: TokenStream) -> Result<TokenStream> {
         input,
     } = syn::parse2(input)?;
     expand_parts(&macro_name, &output, &body, input)
+}
+
+/// Expands one call of the macro that a `define!` input declares, as the generated
+/// wrapper would, so a client can test or debug its own macros as ordinary functions.
+///
+/// `definition` is the input of a `macro_schema::define!` block and `call` is the input
+/// of one call of the macro it defines. The output writes `$crate` as `crate`, the
+/// defining crate as seen from inside it, so it parses with `syn`. Errors are those a
+/// compiler would report for the same definition or call.
+///
+/// ```rust,no_run
+/// use macro_schema_core::expand_definition;
+/// use quote::quote;
+///
+/// let definition = quote! {
+///     pub led { pin: ident }
+///     generate { pub struct $decl.name; const PIN: $crate::Pin = $crate::Pin::$decl.pin; }
+/// };
+/// let expanded = expand_definition(definition, quote! { Status { pin: PIN_3 } })?;
+/// assert_eq!(
+///     expanded.to_string(),
+///     quote! { pub struct Status; const PIN: crate::Pin = crate::Pin::PIN_3; }.to_string()
+/// );
+/// # Ok::<(), macro_schema_core::Error>(())
+/// ```
+pub fn expand_definition(definition: TokenStream, call: TokenStream) -> Result<TokenStream> {
+    let Definition {
+        name, body, output, ..
+    } = syn::parse2(definition)?;
+    let output = match output {
+        DefinitionOutput::Template(template) => Output::Template(embed(template)),
+        DefinitionOutput::Generator(generator) => Output::Generator(quote!(crate::#generator)),
+    };
+    let expanded = expand_parts(&name.to_string(), &output, &body, call)?;
+    Ok(dollar_crate_as_crate(expanded))
 }
 
 pub(crate) fn expand_parts(

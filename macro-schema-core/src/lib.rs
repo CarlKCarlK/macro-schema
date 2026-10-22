@@ -4,6 +4,8 @@
 //! implementation behind its `define!` and `expand!` macros as ordinary Rust
 //! functions, [`define`] and [`expand`], so it can be unit-tested and stepped
 //! through in a debugger without going through the compiler's macro expander.
+//! [`expand_definition`] does the same for a client: it expands a call of a
+//! macro straight from that macro's `define!` input.
 //! The repository's `specs/MACRO_SCHEMA_SPEC.md` explains how the pieces fit
 //! together.
 
@@ -12,7 +14,7 @@ mod schema;
 mod template;
 mod value;
 
-pub use instance::expand;
+pub use instance::{expand, expand_definition};
 pub use schema::define;
 pub use syn::{Error, Result};
 

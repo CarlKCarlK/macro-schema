@@ -546,7 +546,10 @@ this README are ordinary `std` programs.
   libraries can use it.
 - `macro-schema-derive`: the procedural macro entry points.
 - `macro-schema-core`: the implementation, as ordinary Rust over
-  `proc_macro2`, so it can be unit tested.
+  `proc_macro2`, so it can be unit tested. Its `expand_definition` function
+  lets your own tests do the same for your macros: give it a `define!` block's
+  input and one call, and it returns the expansion or the errors. Add it as a
+  dev-dependency.
 
 ## License
 

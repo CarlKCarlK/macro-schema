@@ -68,6 +68,14 @@ from `proc_macro2::TokenStream` to `syn::Result<TokenStream>`, so it can be
 unit tested and debugged without the compiler's macro expander. The derive
 crate turns an `Err` into `compile_error!` with `syn::Error::into_compile_error`.
 
+`macro-schema-core` also exports `expand_definition`, which extends that
+property to clients. It takes a `define!` block's input and one call and runs
+`expand!`'s pipeline directly, with the template embedded (or the generator
+path prefixed) as the wrapper would. It writes `$crate` in the output as
+`crate` so the result parses with `syn`. A client's host tests can then check
+what its macros expand to, and which errors they report, without compiling the
+client crate.
+
 ## Architecture
 
 ### What `define!` emits
@@ -360,4 +368,6 @@ doctest.
 
 Device Envoy's own suites (`cargo check-all`, RP compile-only tests and demos,
 ESP embedded compile tests, and `just docs`) exercise every client macro on
-hardware targets.
+hardware targets. Its `device-envoy-core/tests/macro_expansion.rs` uses
+`expand_definition` to check expansions and diagnostics of RP, ESP, and Core
+schemas on the host.
