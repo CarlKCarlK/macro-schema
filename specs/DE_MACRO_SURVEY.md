@@ -167,7 +167,14 @@ owns its own field meanings and defaults.
 - **ESP users had to depend on `paste`.** The ESP LED helpers called
   `::paste::paste!`, which resolves in the user's crate, so every ESP user
   added `paste` to their own `Cargo.toml`. They now call it through a hidden
-  `device_envoy_esp::__paste` re-export.
+  `device_envoy_esp::__paste` re-export. Generated code also named
+  `::static_cell`, `::heapless`, `::embassy_sync` (RP), and `::esp_hal` (ESP)
+  by bare path, so users depended on those too. Generated code now reaches
+  them through hidden `$crate::__static_cell`, `$crate::__heapless`, and
+  `$crate::__embassy_sync` re-exports, or `$crate::esp_hal`. The starters
+  dropped `paste`, `static_cell`, and `heapless`. Users still need
+  `embassy_executor`, `embassy_time`, and `embassy_rp`, which they use
+  directly anyway.
 - **Generated doc links pointed at the user's crate.** Docs emitted into the
   user's crate wrote `crate::led_strip::LedStrip`, which there means the user's
   crate. Rustdoc rendered them as dead links without a warning. They now name
