@@ -91,11 +91,14 @@ page shows its generated field table.
   and add a group constructor.
 - **Direct.** `audio_player!`, `button_watch!`, `led!`, `servo!`,
   `servo_player!`, `i2cs!`, and the clip macros emit their items directly.
-- **Template plus a value-dispatch helper.** ESP `led_strip!` and `led2d!`
-  forward their resolved fields to `__led_engine_normalize!`, which reduces an
-  `engine` path such as `Engine::Spi` to `Spi` or `Rmt` and dispatches by chip
-  capability. That choice depends on a value's spelling, which the template
-  language intentionally does not express.
+- **Choice by type, not by spelling.** ESP `led_strip!` and `led2d!` forward to
+  a hidden `__led_strip_type` schema. Its `engine` field is a type, `Rmt` or
+  `Spi`, defaulting to the chip's `DefaultEngine`; the template names it once in
+  a type alias, and everything that differs between engines (driver type,
+  buffer length, constructor resource) lives in Rust `LedEngine` and
+  `EngineResource` impls. Until 2026-10-23, `engine` was a value such as
+  `Engine::Spi`, and 14 `macro_rules!` helpers reduced its spelling to `Spi` or
+  `Rmt` and dispatched to two copies of the strip implementation.
 - **A group that calls a hidden declaration macro.** RP `led_strips!` emits each
   strip through `__led_strip_type!`, a `#[doc(hidden)]` schema, from both
   branches of `$if let Some(panel) = $strip.led2d`: under the member's own name
@@ -227,7 +230,6 @@ input and do not declare a named configuration:
 
 | Helper | Why it is a macro rather than template text |
 | --- | --- |
-| `__led_engine_normalize!`, `__led_strip_dispatch_*!`, `__led2d_dispatch_engine!`, `__led_strip_inner!`, `__led_strip_impl!`, `__led_strip_spi_*!`, `__led2d_strip_*!`, `__led_strip_first_or_default!` (esp) | Branch on the spelling of `engine` and on chip capability, which templates intentionally cannot do |
 
 **Internal implementation macros** that generate repetitive impls inside the
 crate and are not invoked by users: `__impl_wifi_auto_fields!`, `impl_wifi_pio!`,

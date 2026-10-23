@@ -261,11 +261,12 @@ Because every construct is tied to the schema, the whole template can be
 type-checked when the library compiles. The language deliberately has no
 comparison or branching on *what* a value is, no arithmetic, no string
 operations, and no user-defined functions. Computation belongs in Rust (consts,
-`const fn`, traits), and the template passes values to it. When output truly
-depends on a value's spelling, a template calls a small client `macro_rules!`
-helper. Device Envoy's ESP `led_strip!` does this: it forwards
-`[$if let Some(chosen) = $decl.engine { $chosen }]` to a helper that reduces
-`Engine::Spi` or `Engine::Rmt` to a choice.
+`const fn`, traits), and the template passes values to it. When output seems
+to depend on which value was given, make the choice a type and let trait impls
+carry the difference. Device Envoy's ESP `led_strip!` once forwarded an
+`Engine::Spi` value to `macro_rules!` helpers that branched on its spelling;
+its `engine` field is now a type (`Rmt` or `Spi`), and the template writes
+`<Engine as LedEngine>::Driver<..>` once for both.
 
 This boundary was tested against the whole Device Envoy corpus. Every
 declaration macro was ported without needing a fifth construct.
