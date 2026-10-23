@@ -98,8 +98,12 @@ page shows its generated field table.
   language intentionally does not express.
 - **Template plus a shared emission helper.** RP `led_strips!` calls
   `__led_strip_type!` from both branches of `$if let Some(panel) = $strip.led2d`
-  (a plain strip, or the strip behind a panel), and `led2d_from_strip!` for the
-  panel wrapper.
+  (a plain strip, or the strip behind a panel). The two calls differ only in the
+  struct's name and attributes, and the template language has no way to bind a
+  name per branch, so the shared body stays in a helper rather than being
+  written twice. The template passes the helper every generated name, including
+  the task's, so the helper needs no `paste!`. The panel wrapper is template
+  text; it was the `led2d_from_strip!` helper until 2026-10-23.
 
 ## API regularization
 
@@ -160,6 +164,21 @@ owns its own field meanings and defaults.
   private items are not visible, so `len: MY_CONST` failed to compile. Found while
   removing ESP `led2d!`'s `len` (item 15); both are now evaluated in the caller's
   scope.
+- **ESP users had to depend on `paste`.** The ESP LED helpers called
+  `::paste::paste!`, which resolves in the user's crate, so every ESP user
+  added `paste` to their own `Cargo.toml`. They now call it through a hidden
+  `device_envoy_esp::__paste` re-export.
+- **Generated doc links pointed at the user's crate.** Docs emitted into the
+  user's crate wrote `crate::led_strip::LedStrip`, which there means the user's
+  crate. Rustdoc rendered them as dead links without a warning. They now name
+  `device_envoy_rp::` or `device_envoy_esp::`, and a host test rejects
+  `crate::` links in generated docs.
+- **Generated items lacked docs.** `led!` (RP, ESP) and ESP `servo_player!`
+  emitted undocumented public items, so a user crate that denies `missing_docs`
+  could not build. Strict compile tests now cover this.
+- **An RP panel logged through the user's `defmt`.** The panel constructor
+  called `defmt::info!` by bare path, so it compiled only if the user's crate
+  depended on `defmt`. The log line is gone.
 
 ### Regressions the migration introduced and then fixed
 
@@ -201,8 +220,7 @@ input and do not declare a named configuration:
 | Helper | Why it is a macro rather than template text |
 | --- | --- |
 | `__led_engine_normalize!`, `__led_strip_dispatch_*!`, `__led2d_dispatch_engine!`, `__led_strip_inner!`, `__led_strip_impl!`, `__led_strip_spi_*!`, `__led2d_strip_*!`, `__led_strip_first_or_default!` (esp) | Branch on the spelling of `engine` and on chip capability, which templates intentionally cannot do |
-| `__led_strip_type!` (rp) | Strip struct, constructor, and task, emitted from both branches of `led_strips!` |
-| `led2d_from_strip!` (rp) | Panel wrapper over a strip type; several arms by layout form. A candidate for a future template |
+| `__led_strip_type!` (rp) | Strip struct, constructor, and task, emitted from both branches of `led_strips!`, which differ only in the struct's name and attributes |
 
 **Internal implementation macros** that generate repetitive impls inside the
 crate and are not invoked by users: `__impl_wifi_auto_fields!`, `impl_wifi_pio!`,

@@ -155,6 +155,14 @@ An earlier design generated one `#[proc_macro]` per schema. That forced every
 client to keep its schemas in a separate proc-macro crate (Device Envoy had a
 `device-envoy-macros` crate). The alias removed that crate.
 
+TODO_NIGHTLY When `decl_macro` stabilizes, `define!` could emit a
+module-scoped `pub macro` in place of the `#[macro_export]` wrapper. The macro
+would then have its module path directly, and the hidden
+`__macro_schema_wrapper_NAME` items would no longer sit at the client's crate
+root. Users already see only the alias's module path, so this changes the
+client's hidden namespace, not its API. (This replaces a TODO that Device
+Envoy repeated above each of its `define!` blocks.)
+
 ### `$crate`
 
 Every reference the generated code makes to the client goes through `$crate`:
