@@ -96,14 +96,15 @@ page shows its generated field table.
   `engine` path such as `Engine::Spi` to `Spi` or `Rmt` and dispatches by chip
   capability. That choice depends on a value's spelling, which the template
   language intentionally does not express.
-- **Template plus a shared emission helper.** RP `led_strips!` calls
-  `__led_strip_type!` from both branches of `$if let Some(panel) = $strip.led2d`
-  (a plain strip, or the strip behind a panel). The two calls differ only in the
-  struct's name and attributes, and the template language has no way to bind a
-  name per branch, so the shared body stays in a helper rather than being
-  written twice. The template passes the helper every generated name, including
-  the task's, so the helper needs no `paste!`. The panel wrapper is template
-  text; it was the `led2d_from_strip!` helper until 2026-10-23.
+- **A group that calls a hidden declaration macro.** RP `led_strips!` emits each
+  strip through `__led_strip_type!`, a `#[doc(hidden)]` schema, from both
+  branches of `$if let Some(panel) = $strip.led2d`: under the member's own name
+  for a plain strip, or under a hidden `<Name>LedStrip` name behind a panel.
+  Because a declaration macro takes its name as input, the strip body is
+  written once without the template language needing a way to bind a name per
+  branch. The panel wrapper is template text in `led_strips!`. Until
+  2026-10-23 both were hand-written `macro_rules!` helpers (`__led_strip_type!`
+  and `led2d_from_strip!`), built on `paste!`.
 
 ## API regularization
 
@@ -227,7 +228,6 @@ input and do not declare a named configuration:
 | Helper | Why it is a macro rather than template text |
 | --- | --- |
 | `__led_engine_normalize!`, `__led_strip_dispatch_*!`, `__led2d_dispatch_engine!`, `__led_strip_inner!`, `__led_strip_impl!`, `__led_strip_spi_*!`, `__led2d_strip_*!`, `__led_strip_first_or_default!` (esp) | Branch on the spelling of `engine` and on chip capability, which templates intentionally cannot do |
-| `__led_strip_type!` (rp) | Strip struct, constructor, and task, emitted from both branches of `led_strips!`, which differ only in the struct's name and attributes |
 
 **Internal implementation macros** that generate repetitive impls inside the
 crate and are not invoked by users: `__impl_wifi_auto_fields!`, `impl_wifi_pio!`,
