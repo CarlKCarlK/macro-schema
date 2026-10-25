@@ -443,11 +443,12 @@ The [`define!`] reference lists every error message.
 ## Generated documentation
 
 The schema is the single source of the macro's documentation. For `setting!`,
-the macro's rustdoc page shows the `define!`'s own doc comment, followed by
-this generated Markdown:
+the macro's rustdoc page shows the `define!`'s own doc comment, with a
+**Syntax and fields** link added under its first paragraph, followed by this
+generated Markdown:
 
 ````text
-**Syntax:**
+# Syntax
 
 ```text
 setting! {

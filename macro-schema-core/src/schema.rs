@@ -1,5 +1,5 @@
 use proc_macro2::{Group, Span, TokenStream, TokenTree};
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, Error, Expr, ExprLit, Ident, Lit, LitInt, Meta, MetaNameValue, Path, Result, Token,
     Visibility, braced, bracketed,
@@ -452,6 +452,7 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
             quote!(template: { #template })
         }
     };
+    let alias_attrs = with_syntax_link(&attrs);
     // The generated syntax and field tables go on the wrapper, the hand-written docs on
     // the alias. Rustdoc shows a re-export's own docs followed by the original item's
     // docs, so this crate's page gets both, and another crate that re-exports the macro
@@ -472,15 +473,81 @@ pub fn define(input: TokenStream) -> Result<TokenStream> {
             };
         }
 
-        #(#attrs)*
+        #(#alias_attrs)*
         #[doc(inline)]
         #vis use #wrapper as #name;
     })
 }
 
+/// The line `define!` adds to a macro's hand-written docs, pointing to the generated
+/// `# Syntax` section that rustdoc renders after them.
+pub(crate) const SYNTAX_LINK: &str = "**Syntax and fields:** [below](#syntax).";
+
+/// `attrs` with [`SYNTAX_LINK`] added at the end of the first paragraph of their doc text,
+/// so the link sits right under the summary. The summary itself is unchanged, so module
+/// listings still show it. Hidden macros and macros without doc text get no link.
+fn with_syntax_link(attrs: &[Attribute]) -> Vec<TokenStream> {
+    let doc_text = |attr: &Attribute| match &attr.meta {
+        Meta::NameValue(MetaNameValue {
+            path,
+            value:
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(text),
+                    ..
+                }),
+            ..
+        }) if path.is_ident("doc") => Some(text.value()),
+        _ => None,
+    };
+    let is_doc_value = |attr: &Attribute| matches!(&attr.meta, Meta::NameValue(name_value) if name_value.path.is_ident("doc"));
+    let hidden = attrs.iter().any(|attr| {
+        attr.path().is_ident("doc")
+            && attr
+                .parse_args::<Ident>()
+                .is_ok_and(|argument| argument == "hidden")
+    });
+    let first_text = attrs
+        .iter()
+        .position(|attr| doc_text(attr).is_some_and(|text| !text.trim().is_empty()));
+    let (Some(first_text), false) = (first_text, hidden) else {
+        return attrs.iter().map(ToTokens::to_token_stream).collect();
+    };
+    // The summary paragraph ends at the first blank doc line or the first doc value that
+    // is not a literal, such as `include_str!(...)`; otherwise after the last doc line.
+    let paragraph_end = attrs[first_text..]
+        .iter()
+        .position(|attr| {
+            is_doc_value(attr) && doc_text(attr).is_none_or(|text| text.trim().is_empty())
+        })
+        .map_or_else(
+            || {
+                attrs
+                    .iter()
+                    .rposition(is_doc_value)
+                    .map_or(attrs.len(), |last| last + 1)
+            },
+            |offset| first_text + offset,
+        );
+    let mut out: Vec<TokenStream> = attrs[..paragraph_end]
+        .iter()
+        .map(ToTokens::to_token_stream)
+        .collect();
+    out.push(quote!(#[doc = ""]));
+    out.push(quote!(#[doc = #SYNTAX_LINK]));
+    // A non-literal doc value such as `include_str!(...)` starts a new paragraph after the link.
+    if attrs
+        .get(paragraph_end)
+        .is_some_and(|attr| is_doc_value(attr) && doc_text(attr).is_none())
+    {
+        out.push(quote!(#[doc = ""]));
+    }
+    out.extend(attrs[paragraph_end..].iter().map(ToTokens::to_token_stream));
+    out
+}
+
 /// Syntax block and field tables appended to the macro's hand-written docs.
 pub(crate) fn macro_doc(macro_name: &Ident, body: &BodySpec) -> Result<String> {
-    let mut doc = String::from("\n\n**Syntax:**\n\n```text\n");
+    let mut doc = String::from("\n\n# Syntax\n\n```text\n");
     doc.push_str(&format!("{macro_name}! {{\n"));
     doc.push_str("    [<attributes>] [<visibility>] <Name> {\n");
     syntax_lines(body, 2, &mut doc)?;

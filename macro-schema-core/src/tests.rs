@@ -128,7 +128,7 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
         #[cfg(not(feature = "host"))]
         pub led => __led_generate { pin: ident }
     };
-    let doc = "\n\n**Syntax:**\n\n```text\n\
+    let doc = "\n\n# Syntax\n\n```text\n\
         led! {\n    [<attributes>] [<visibility>] <Name> {\n\
         \x20       pin: <ident>,\n\
         \x20   }\n}\n```\n\n**Fields:**\n\n\
@@ -152,6 +152,8 @@ fn define_emits_wrapper_and_bare_name_alias() -> Result<()> {
         }
 
         /// An LED strip.
+        #[doc = ""]
+        #[doc = "**Syntax and fields:** [below](#syntax)."]
         #[cfg(not(feature = "host"))]
         #[doc(inline)]
         pub use __macro_schema_wrapper_led as led;
@@ -322,7 +324,7 @@ fn schema_rejects_optional_with_default() {
 fn define_documents_members_and_blocks() -> Result<()> {
     let schema: Schema = syn::parse_str(STRIPS_SCHEMA)?;
     let doc = macro_doc(&syn::parse_quote!(strips), &schema.body)?;
-    let expected = "\n\n**Syntax:**\n\n```text\n\
+    let expected = "\n\n# Syntax\n\n```text\n\
         strips! {\n    [<attributes>] [<visibility>] <Name> {\n\
         \x20       bus: <ident>, // optional, default: BUS0\n\
         \x20       [<attributes>] <MemberName> { // 1 to 2 members; visibility comes from the group\n\
@@ -742,4 +744,88 @@ fn expand_definition_reports_call_errors() {
         error_message(expand_definition(definition, call)).as_deref(),
         Some("unknown field `length`; expected one of `pin`")
     );
+}
+
+/// The doc attributes `define!` puts on the alias, as their doc strings (other attributes
+/// as `#[..]`).
+fn alias_docs(input: TokenStream) -> Result<Vec<String>> {
+    let file: syn::File = syn::parse2(define(input)?)?;
+    let alias = file
+        .items
+        .into_iter()
+        .find_map(|item| match item {
+            syn::Item::Use(item_use) => Some(item_use),
+            _ => None,
+        })
+        .ok_or_else(|| syn::Error::new(proc_macro2::Span::call_site(), "no alias"))?;
+    Ok(alias
+        .attrs
+        .iter()
+        .map(|attr| match &attr.meta {
+            syn::Meta::NameValue(name_value) if name_value.path.is_ident("doc") => {
+                match &name_value.value {
+                    syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(text),
+                        ..
+                    }) => text.value(),
+                    other => quote!(#other).to_string(),
+                }
+            }
+            _ => "#[..]".to_owned(),
+        })
+        .collect())
+}
+
+#[test]
+fn syntax_link_follows_the_summary_paragraph() -> Result<()> {
+    let docs = alias_docs(quote! {
+        /// An LED strip.
+        ///
+        /// More detail.
+        pub led => __led_generate { pin: ident }
+    })?;
+    assert_eq!(
+        docs,
+        [
+            " An LED strip.",
+            "",
+            "**Syntax and fields:** [below](#syntax).",
+            "",
+            " More detail.",
+            "#[..]",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn syntax_link_comes_before_an_included_doc() -> Result<()> {
+    let docs = alias_docs(quote! {
+        #[doc = "An audio clip."]
+        #[doc = include_str!("clip.md")]
+        pub clip => __clip_generate { file: expr }
+    })?;
+    assert_eq!(
+        docs,
+        [
+            "An audio clip.",
+            "",
+            "**Syntax and fields:** [below](#syntax).",
+            "",
+            "include_str ! (\"clip.md\")",
+            "#[..]",
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn hidden_macros_get_no_syntax_link() -> Result<()> {
+    let docs = alias_docs(quote! {
+        /// Internal.
+        #[doc(hidden)]
+        pub __helper => __helper_generate { pin: ident }
+    })?;
+    assert_eq!(docs, [" Internal.", "#[..]", "#[..]"]);
+    Ok(())
 }

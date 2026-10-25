@@ -441,9 +441,13 @@ constructs. See [Errors](#errors).
 # Documentation
 
 **Macro docs.** The defined macro's page shows the `define!`'s doc comment,
-then a generated `**Syntax:**` block, a `**Fields:**` table, and, when there
+then a generated `# Syntax` section with a `**Fields:**` table and, when there
 are members, a `**Member fields**` table. The tables show each field's kind,
-whether it is required or its default, and its doc comment.
+whether it is required or its default, and its doc comment. Rustdoc renders the
+generated section last, so `define!` adds a "**Syntax and fields:**
+[below](#syntax)" link after the first paragraph of the doc comment. The
+summary paragraph is unchanged, so module listings still show it. Hidden macros
+and macros without doc comments get no link.
 
 **Item docs.** `$decl.doc` and `$m.doc` hold generated documentation for the
 declaration or member: which macro generated it, and a table of the values it
