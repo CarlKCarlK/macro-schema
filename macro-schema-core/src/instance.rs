@@ -9,7 +9,7 @@ use syn::{
 use crate::{
     schema::{
         BodySpec, Default, Definition, DefinitionOutput, FieldSpec, MembersSpec, Shape,
-        dollar_crate_as_crate, escape_cell, parse_body,
+        dollar_crate_as_crate, escape_cell, is_prose, parse_body,
     },
     template::{Data, EMBEDDED_SIGIL, Template, embed},
     value::Value,
@@ -431,6 +431,8 @@ struct Resolved {
     /// What a `generate` template reads.
     value: ResolvedValue,
     display: String,
+    /// `display` is a prose `#[default_display]`, shown as written rather than as code.
+    prose: bool,
     is_default: bool,
 }
 
@@ -577,11 +579,13 @@ fn resolve_field(
             return Ok(None);
         }
     };
+    let prose = is_default && spec.default_display.as_deref().is_some_and(is_prose);
     Ok(Some(Resolved {
         name: spec.name.clone(),
         tokens,
         value,
         display,
+        prose,
         is_default,
     }))
 }
@@ -706,11 +710,12 @@ fn instance_doc(
     doc.push_str("| Field | Value |\n| ----- | ----- |\n");
     for field in fields {
         let marker = if field.is_default { " (default)" } else { "" };
-        doc.push_str(&format!(
-            "| `{}` | `{}`{marker} |\n",
-            field.name,
+        let value = if field.prose {
             escape_cell(&field.display)
-        ));
+        } else {
+            format!("`{}`", escape_cell(&field.display))
+        };
+        doc.push_str(&format!("| `{}` | {value}{marker} |\n", field.name));
     }
     Ok(doc)
 }

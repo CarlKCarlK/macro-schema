@@ -274,7 +274,7 @@ Device Envoy: none of their output could be derived from the schema alone.
 
 ## The template language
 
-A template has exactly four constructs. Everything else in it is copied
+A template has exactly five constructs. Everything else in it is copied
 through as Rust.
 
 ### Values
@@ -355,6 +355,14 @@ letter, or that follows digits after a lowercase letter
 (`Ir15Receiver` → `ir15_receiver`), and before the last capital of an acronym
 (`HTTPServer` → `http_server`). Text that is already
 all capitals keeps its words (`LED2D` → `led2d`).
+
+### Const generic arguments: `$const_arg`
+
+`$const_arg($decl.len)` writes a const generic argument: bare when the caller
+wrote one literal or identifier (`impl Strip<8>`, `impl Strip<LEN>`), braced
+otherwise (`impl Strip<{ (4 * 2) }>`). Rustdoc prints a braced argument as its
+source text, which for generated code is the template, so a hand-written
+`{ $decl.len }` would show up in the caller's docs as `{ $decl.len }`.
 
 ### `$crate` and expressions
 
@@ -453,24 +461,28 @@ generated Markdown:
 ```text
 setting! {
     [<attributes>] [<visibility>] <Name> {
-        key: <expr>,
-        value: <ty>,
-        default: <expr>, // optional, default: Default::default()
+        key: <value>,
+        value: <type>,
+        default: <value>, // optional, default: Default::default()
     }
 }
 ```
+
+A *name* is an identifier, such as `GPIO8`; a *value* is any expression, such as `250` or a constant; a *type* is a type, such as `u8`.
 
 **Fields:**
 
 | Field | Kind | Default | Description |
 | ----- | ---- | ------- | ----------- |
-| `key` | expr | required | Key that identifies the setting, such as `"server.port"`. |
-| `value` | ty | required | Type of the setting's value. |
-| `default` | expr | `Default::default()` | Value used when the setting is absent. |
+| `key` | value | required | Key that identifies the setting, such as `"server.port"`. |
+| `value` | type | required | Type of the setting's value. |
+| `default` | value | `Default::default()` | Value used when the setting is absent. |
 ````
 
 `#[default_display = "Default::default()"]` on the `default` field sets how
-its default is shown, without changing the tokens the template receives.
+its default is shown, without changing the tokens the template receives. The
+docs describe kinds in the words a macro's users know (*name*, *value*,
+*type*) rather than `ident`, `expr`, and `ty`.
 
 Each generated item can be documented too. `$decl.doc` holds a description of
 the declaration's configuration, so `#[doc = $decl.doc]` gives `Verbose` this

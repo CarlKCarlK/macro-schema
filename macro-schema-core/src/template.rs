@@ -1,6 +1,6 @@
 //! The `generate { ... }` template language.
 //!
-//! A template is ordinary Rust tokens plus four structural constructs, all introduced
+//! A template is ordinary Rust tokens plus five structural constructs, all introduced
 //! by `$`:
 //!
 //! - `$decl.value`, `$member.field`: substitute a resolved value. Every declaration
@@ -8,6 +8,7 @@
 //! - `$for member in $decl.members { ... }`: repeat once per member.
 //! - `$if let Some(x) = $decl.optional { ... } else { ... }`: branch on an optional field.
 //! - `$ident(...)`, `$snake(...)`, `$upper(...)`: build an identifier.
+//! - `$const_arg(...)`: write a const generic argument, braced only when it must be.
 //!
 //! `$crate` passes through unchanged. Templates are parsed and type-checked against the
 //! schema when `define!` runs, so a typo in a template is reported at the library's
@@ -78,6 +79,10 @@ enum Node {
         case: Case,
         span: Span,
         parts: Vec<Part>,
+    },
+    ConstArg {
+        span: Span,
+        inner: Vec<Node>,
     },
 }
 
@@ -209,7 +214,7 @@ impl<'a> Parser<'a> {
                     if !is_crate {
                         return Err(Error::new(
                             punct.span(),
-                            "`$` must start a template construct (`$value`, `$for`, `$if`, `$ident(...)`) or `$crate`",
+                            "`$` must start a template construct (`$value`, `$for`, `$if`, `$ident(...)`, `$const_arg(...)`) or `$crate`",
                         ));
                     }
                     nodes.push(Node::Token(TokenTree::Punct(punct)));
@@ -233,6 +238,13 @@ impl<'a> Parser<'a> {
         match word.as_str() {
             "for" => self.for_node(&keyword, tokens),
             "if" => self.if_node(&keyword, tokens),
+            "const_arg" if is_call => {
+                let args = expect_group(tokens, keyword.span(), Delimiter::Parenthesis, "`(...)`")?;
+                Ok(Node::ConstArg {
+                    span: args.span(),
+                    inner: self.nodes(args.stream())?,
+                })
+            }
             "ident" | "snake" | "upper" if is_call => {
                 let args = expect_group(tokens, keyword.span(), Delimiter::Parenthesis, "`(...)`")?;
                 let case = match word.as_str() {
@@ -586,6 +598,21 @@ fn lookup<'d>(root: &'d Data, env: &[(String, &'d Data)], path: &Path) -> Option
     Some(data)
 }
 
+/// A const generic argument: one literal or one identifier stays bare, anything else is
+/// braced. Rust requires the braces only for other expressions, and rustdoc prints a
+/// braced argument as its source text, which for generated code is the template.
+fn const_arg(tokens: TokenStream, span: Span) -> TokenStream {
+    let mut trees = tokens.clone().into_iter();
+    match (trees.next(), trees.next()) {
+        (Some(TokenTree::Literal(_) | TokenTree::Ident(_)), None) => tokens,
+        _ => {
+            let mut group = Group::new(Delimiter::Brace, tokens);
+            group.set_span(span);
+            TokenTree::Group(group).into()
+        }
+    }
+}
+
 fn render_nodes<'d>(
     nodes: &[Node],
     root: &'d Data,
@@ -629,6 +656,11 @@ fn render_nodes<'d>(
                     env.pop();
                 }
             },
+            Node::ConstArg { span, inner } => {
+                let mut stream = TokenStream::new();
+                render_nodes(inner, root, env, &mut stream);
+                output.extend(const_arg(stream, *span));
+            }
             Node::Ident { case, span, parts } => {
                 let mut text = String::new();
                 let mut ident_span = None;

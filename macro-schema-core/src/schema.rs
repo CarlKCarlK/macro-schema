@@ -545,13 +545,19 @@ fn with_syntax_link(attrs: &[Attribute]) -> Vec<TokenStream> {
     out
 }
 
+/// What the placeholders in the syntax block and the Kind column mean.
+const KIND_LEGEND: &str = "A *name* is an identifier, such as `GPIO8`; a *value* is any expression, \
+such as `250` or a constant; a *type* is a type, such as `u8`.\n\n";
+
 /// Syntax block and field tables appended to the macro's hand-written docs.
 pub(crate) fn macro_doc(macro_name: &Ident, body: &BodySpec) -> Result<String> {
     let mut doc = String::from("\n\n# Syntax\n\n```text\n");
     doc.push_str(&format!("{macro_name}! {{\n"));
     doc.push_str("    [<attributes>] [<visibility>] <Name> {\n");
     syntax_lines(body, 2, &mut doc)?;
-    doc.push_str("    }\n}\n```\n\n**Fields:**\n\n");
+    doc.push_str("    }\n}\n```\n\n");
+    doc.push_str(KIND_LEGEND);
+    doc.push_str("**Fields:**\n\n");
     field_table(&body.fields, &mut doc)?;
     if let Some(members) = &body.members {
         doc.push_str(&format!(
@@ -576,6 +582,7 @@ fn syntax_lines(body: &BodySpec, depth: usize, doc: &mut String) -> Result<()> {
                         format!(
                             " // optional, default: {}",
                             default_text(default, field.default_display.as_deref(), "")?
+                                .replace('`', "")
                         )
                     }
                     (None, true) => " // optional".to_owned(),
@@ -584,7 +591,7 @@ fn syntax_lines(body: &BodySpec, depth: usize, doc: &mut String) -> Result<()> {
                 doc.push_str(&format!(
                     "{indent}{}: <{}>,{note}\n",
                     field.name,
-                    kind.name()
+                    kind.doc_name()
                 ));
             }
             Shape::Block(block) => {
@@ -626,7 +633,7 @@ fn field_rows(fields: &[FieldSpec], prefix: &str, doc: &mut String) -> Result<()
                     (None, true) => "optional".to_owned(),
                     (None, false) => "required".to_owned(),
                 };
-                (kind.name(), default)
+                (kind.doc_name(), default)
             }
             Shape::Block(_) => {
                 let default = if field.optional {
@@ -652,6 +659,7 @@ fn field_rows(fields: &[FieldSpec], prefix: &str, doc: &mut String) -> Result<()
 fn default_text(default: &Default, display: Option<&str>, quote: &str) -> Result<String> {
     Ok(match default {
         Default::Value(value) => match display {
+            Some(display) if is_prose(display) => display.to_owned(),
             Some(display) => format!("{quote}{display}{quote}"),
             None => format!("{quote}{}{quote}", value.pretty()?),
         },
@@ -663,6 +671,13 @@ fn default_text(default: &Default, display: Option<&str>, quote: &str) -> Result
             format!("by member index: {}", values.join(", "))
         }
     })
+}
+
+/// Whether a `#[default_display]` text is prose rather than code. Backticks mean the
+/// author wrote Markdown, and a phrase is prose; a single word such as `Gamma::Srgb` is
+/// code, shown in code font.
+pub(crate) fn is_prose(display: &str) -> bool {
+    display.contains('`') || display.contains(char::is_whitespace)
 }
 
 pub fn escape_cell(text: &str) -> String {

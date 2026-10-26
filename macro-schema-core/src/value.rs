@@ -30,6 +30,15 @@ impl Kind {
         }
     }
 
+    /// The kind as the generated docs show it to a macro's users.
+    pub fn doc_name(self) -> &'static str {
+        match self {
+            Self::Ident => "name",
+            Self::Expr => "value",
+            Self::Type => "type",
+        }
+    }
+
     fn description(self) -> &'static str {
         match self {
             Self::Ident => "an identifier",

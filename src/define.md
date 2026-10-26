@@ -125,6 +125,15 @@ the real default:
 gamma: expr = $crate::led::Gamma::Srgb,
 ```
 
+A single word, such as `Gamma::Srgb`, is shown in code font. A phrase is shown
+as plain text, so a default that depends on something can say so:
+`#[default_display = "RMT where the chip has it, otherwise SPI"]`. Write
+backticks to mix the two: `#[default_display = "`60` (SPI only)"]`. The syntax
+block, which is code, shows the text without backticks.
+
+The docs call the kinds *name* (`ident`), *value* (`expr`), and *type* (`ty`),
+the words a macro's users know, and explain them in one line above the fields.
+
 ## Nested blocks
 
 A field can hold a block of fields, which the caller writes in braces. A block
@@ -198,7 +207,7 @@ NAME! {
 
 # Template
 
-A template is Rust code plus four constructs, each starting with `$`:
+A template is Rust code plus five constructs, each starting with `$`:
 
 | Construct | Meaning |
 | --- | --- |
@@ -206,6 +215,7 @@ A template is Rust code plus four constructs, each starting with `$`:
 | `$for var in $decl.members { ... }` | Repeat once per member |
 | `$if let Some(var) = OPTIONAL { ... } else { ... }` | Branch on an optional value; `else` may be omitted |
 | `$ident(...)`, `$snake(...)`, `$upper(...)` | Build an identifier |
+| `$const_arg(...)` | Write a const generic argument |
 
 `$crate` passes through. Any other `$` is an error.
 
@@ -357,6 +367,24 @@ fn main() {
     assert!(Anything::contains(-1));
 }
 ```
+
+## Const generic arguments
+
+`$const_arg(VALUE)` writes a const generic argument. A single literal or
+identifier is written bare, and anything else is wrapped in braces, which Rust
+requires for other expressions:
+
+| Template | Caller wrote | Result |
+| --- | --- | --- |
+| `impl Grid<$const_arg($decl.width)>` | `width: 12` | `impl Grid<12>` |
+| `impl Grid<$const_arg($decl.width)>` | `width: WIDTH` | `impl Grid<WIDTH>` |
+| `impl Grid<$const_arg($decl.width)>` | `width: 4 * 3` | `impl Grid<{ (4 * 3) }>` |
+
+Prefer it to writing `{ $decl.width }` yourself. Rustdoc shows a braced argument
+as its source text, and for generated code that text is the template, so the
+caller's documentation would read `impl Grid<{ $decl.width }>`. A bare argument
+shows as the caller wrote it. For a computed value, generate a named constant
+and pass it: `$const_arg($upper($decl.name, _WIDTH))`.
 
 ## Identifiers
 
