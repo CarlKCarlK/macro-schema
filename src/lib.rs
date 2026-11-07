@@ -28,7 +28,7 @@ pub use macro_schema_derive::define;
 /// `expand!` parses the call, checks it against the schema, fills in defaults,
 /// builds the generated documentation, and renders the template (or calls the
 /// [escape-hatch generator](macro@define#escape-hatch-a-macro_rules-generator)).
-/// The repository's `specs/MACRO_SCHEMA_SPEC.md` describes these steps in
+/// The repository's `docs/architecture.md` describes these steps in
 /// detail.
 ///
 /// Its input format is internal and may change; only generated macros should

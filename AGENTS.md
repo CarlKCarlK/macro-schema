@@ -1,7 +1,7 @@
 # Coding Notes for Agents
 
 - This crate is a general-purpose proc macro. Device Envoy
-  (`~/programs/mcu/device-envoy`, branch `proc-macro-const-structures`) is its
+  (`~/programs/mcu/device-envoy`) is its
   first serious customer and test corpus, not a compatibility target. Do not
   add Device Envoy concepts to this crate.
 - Follow the shared Rust rules in Device Envoy's `AGENTS.md` (error handling,

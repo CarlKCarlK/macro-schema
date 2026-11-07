@@ -519,9 +519,9 @@ library.
 
 Those declaration macros were first written with `macro_rules!`, and they
 became hard to write and maintain. `macro-schema` was built to replace them.
-Device Envoy now defines 33 declaration macros with it (on its
-`proc-macro-const-structures` branch, not yet released), including its LED
-strip, LED panel, infrared, LCD, audio, button, and servo APIs. Moving to it:
+Device Envoy defines 33 declaration macros with it, since its 0.2.0 release,
+including its LED strip, LED panel, infrared, LCD, audio, button, and servo
+APIs. Moving to it:
 
 - replaced 14,188 lines of hand-written `macro_rules!` with 3,246 lines of
   `define!` blocks (schemas, templates, and their documentation) plus 1,912
@@ -548,7 +548,7 @@ this README are ordinary `std` programs.
 - [`expand!`] is the procedural macro that every generated macro calls. You
   re-export it once; you never call it yourself.
 - The repository's [`examples/`](https://github.com/CarlKCarlK/macro-schema/tree/main/examples) directory has the two programs above.
-- [`specs/MACRO_SCHEMA_SPEC.md`](https://github.com/CarlKCarlK/macro-schema/blob/main/specs/MACRO_SCHEMA_SPEC.md), in the
+- [`docs/architecture.md`](https://github.com/CarlKCarlK/macro-schema/blob/main/docs/architecture.md), in the
   repository, explains how the crate works inside: how `define!` builds a macro
   that other crates can call, how `expand!` validates and renders, how spans
   are kept, and why the design is what it is.

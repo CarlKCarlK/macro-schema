@@ -1,14 +1,12 @@
-# macro-schema Specification
-
-<!-- TODO0 consider deleting this spec once the work below is implemented and released. (may no longer apply: this is now the authoritative description of the implementation) -->
+# macro-schema Architecture
 
 This document is for contributors. It explains how `macro-schema` works
 inside and why it is designed the way it is. Where this document and the code
 disagree, the code is right and this document has a bug.
 
 The crate was developed under the name `const-structures` and renamed
-`macro-schema` before its first release. Older commits, and Device Envoy's
-`proc-macro-const-structures` branch, still use the old name.
+`macro-schema` before its first release. Older commits, including Device
+Envoy's history before its 0.2.0 release, still use the old name.
 
 To *use* the crate, start elsewhere:
 
@@ -18,7 +16,7 @@ To *use* the crate, start elsewhere:
 | `src/define.md` (the rustdoc of `define!`) | The complete language reference: schema, invocation syntax, every template construct, documentation rules, the error catalog, the escape hatch |
 | The rustdoc of `expand!` (in `src/lib.rs`) | What `expand!` is and the required re-export |
 | `examples/quick_start.rs`, `examples/commands.rs` | Runnable programs; the README quotes the first verbatim |
-| [DE_MACRO_SURVEY.md](DE_MACRO_SURVEY.md) | Device Envoy's migration, the first real client |
+| Device Envoy's [`docs/development.md`](https://github.com/CarlKCarlK/device-envoy/blob/main/docs/development.md#declaration-macros) | How the first real client organizes its 33 schemas, and the macros it keeps as `macro_rules!` |
 
 This document does not repeat the language reference. It refers to sections of
 `src/define.md` by name.
@@ -41,10 +39,10 @@ The result went further. The generators were replaced too:
 - **Generators:** every one of those 33 macros renders its output from a
   `generate { ... }` template written next to its schema. No Device Envoy macro
   uses the `=> generator` escape hatch. The hand-written `macro_rules!` that
-  remain are small internal helpers a template calls (for example, choosing an
-  output engine by value) and macros that are not declarations at all (`tone!`,
-  `combine!`, `tga!`, `init_and_start!`). The survey lists them and explains why
-  each one stays.
+  remain generate repetitive impls inside the library, or are macros that are
+  not declarations at all (`tone!`,
+  `combine!`, `tga!`, `init_and_start!`). Device Envoy's development guide lists
+  them and explains why each one stays.
 
 So a library author writes three things in one place: the schema, its docs,
 and a template. The framework supplies everything else.
