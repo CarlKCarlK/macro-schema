@@ -39,7 +39,7 @@ readme = "README.md"
 keywords = ["macro", "schema", "template", "declaration", "codegen"]
 categories = ["development-tools::procedural-macro-helpers", "no-std"]
 documentation = "https://docs.rs/macro-schema"
-exclude = ["AGENTS.md", "CLAUDE.md", "Cargo.lock", "specs/**", "fixtures/**", "target/**", "wip/**", "tests/readme.rs"]
+exclude = ["AGENTS.md", "CLAUDE.md", "Cargo.lock", "specs/**", "docs/**", "fixtures/**", "target/**", "wip/**", "tests/readme.rs"]
 
 [dependencies]
 macro-schema-derive.workspace = true

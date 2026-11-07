@@ -6,7 +6,7 @@
 //! through in a debugger without going through the compiler's macro expander.
 //! [`expand_definition`] does the same for a client: it expands a call of a
 //! macro straight from that macro's `define!` input.
-//! The repository's `specs/MACRO_SCHEMA_SPEC.md` explains how the pieces fit
+//! The repository's `docs/architecture.md` explains how the pieces fit
 //! together.
 
 mod instance;
